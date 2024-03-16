@@ -2,9 +2,12 @@ group 'de.banaco'
 version '2.12.4'
 
 buildscript {
-    repositories { jcenter() }
+    repositories { 
+        jcenter()
+        gradlePluginPortal()
+    }
     dependencies {
-        classpath 'com.github.jengelman.gradle.plugins:shadow:4.0.4'
+        classpath 'com.github.johnrengelman:shadow:8.1.1'
     }
 }
 
@@ -13,23 +16,25 @@ apply plugin: 'com.github.johnrengelman.shadow'
 
 description = """bPermissions"""
 
-sourceCompatibility = 1.7
-targetCompatibility = 1.7
-
+sourceCompatibility = 1.17
+targetCompatibility = 1.17
 
 repositories {
     maven { url "https://hub.spigotmc.org/nexus/content/groups/public/" }
-    maven { url "http://repo.bukkit.org/content/groups/public/" }
-    maven { url "http://repo.maven.apache.org/maven2" }
+    maven { url "https://repo.maven.apache.org/maven2" }
 }
 
 dependencies {
-    compile project(":bPermissions-API")
-    compile group: 'org.bukkit', name: 'bukkit', version: '1.14.4-R0.1-SNAPSHOT'
+    implementation project(":bPermissions-API")
+    implementation group: 'org.spigotmc', name: 'spigot-api', version: '1.20.4-R0.1-SNAPSHOT'
+    implementation 'com.squareup.okhttp3:okhttp:4.10.0'
+    implementation 'org.json:json:20220320'
 }
 
 shadowJar {
     dependencies {
         include(dependency(':bPermissions-API'))
+        include(dependency('com.squareup.okhttp3:okhttp'))
+        include(dependency('org.json:json'))
     }
 }

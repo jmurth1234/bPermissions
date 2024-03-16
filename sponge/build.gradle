@@ -9,22 +9,25 @@ repositories {
     mavenCentral()
     maven {
         name = 'sponge'
-        url = 'http://repo.spongepowered.org/maven'
+        url = 'https://repo.spongepowered.org/maven'
     }
 }
 
 buildscript {
-    repositories { jcenter() }
+    repositories { 
+        jcenter()
+        gradlePluginPortal()
+    }
     dependencies {
-        classpath 'com.github.jengelman.gradle.plugins:shadow:4.0.4'
+        classpath 'com.github.johnrengelman:shadow:8.1.1'
     }
 }
 
 
 dependencies {
-    testCompile group: 'junit', name: 'junit', version: '4.11'
-    compile 'org.spongepowered:spongeapi:4.1.0'
-    compile project(":bPermissions-API")
+    // testCompile group: 'junit', name: 'junit', version: '4.11'
+    implementation 'org.spongepowered:spongeapi:4.1.0'
+    implementation project(":bPermissions-API")
 }
 
 shadowJar {

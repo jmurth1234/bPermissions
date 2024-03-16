@@ -12,6 +12,6 @@ repositories {
 }
 
 dependencies {
-    compile "com.googlecode.json-simple:json-simple:1.1.1"
-    compile "com.google.guava:guava:17.0"
+    implementation "com.googlecode.json-simple:json-simple:1.1.1"
+    implementation "com.google.guava:guava:17.0"
 }
