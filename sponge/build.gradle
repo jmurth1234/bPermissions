@@ -1,4 +1,4 @@
-version 'early-alpha-do-not-use'
+version = "${rootProject.ext.fullVersion}-alpha"
 
 apply plugin: 'java'
 apply plugin: 'jacoco'
@@ -18,8 +18,8 @@ repositories {
 }
 
 buildscript {
-    repositories { 
-        jcenter()
+    repositories {
+        mavenCentral()
         gradlePluginPortal()
     }
     dependencies {
@@ -76,4 +76,60 @@ shadowJar {
     dependencies {
         include(dependency(':bPermissions-API'))
     }
+}
+
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            artifactId = 'bPermissions-Sponge'
+
+            artifact(tasks.jar)
+            artifact(shadowJar) {
+                classifier = 'all'
+            }
+
+            pom {
+                name = 'bPermissions Sponge (Alpha)'
+                description = 'Sponge implementation of bPermissions - Early Alpha Version'
+                url = 'https://github.com/rymate1234/bPermissions'
+
+                licenses {
+                    license {
+                        name = 'Attribute Only License'
+                        url = 'http://aol.nexua.org'
+                    }
+                }
+
+                developers {
+                    developer {
+                        id = 'rymate1234'
+                        name = 'bPermissions Team'
+                    }
+                }
+
+                scm {
+                    connection = 'scm:git:git://github.com/rymate1234/bPermissions.git'
+                    url = 'https://github.com/rymate1234/bPermissions'
+                }
+            }
+
+            // Manually specify dependencies
+            pom.withXml {
+                def dependenciesNode = asNode().appendNode('dependencies')
+                configurations.implementation.allDependencies.each {
+                    if (it.group != null && it.name != null) {
+                        def dependencyNode = dependenciesNode.appendNode('dependency')
+                        dependencyNode.appendNode('groupId', it.group)
+                        dependencyNode.appendNode('artifactId', it.name)
+                        dependencyNode.appendNode('version', it.version)
+                        dependencyNode.appendNode('scope', 'compile')
+                    }
+                }
+            }
+        }
+    }
+}
+
+tasks.withType(PublishToMavenRepository).configureEach {
+    dependsOn shadowJar
 }

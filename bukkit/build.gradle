@@ -1,9 +1,6 @@
-group 'de.banaco'
-version '2.12.4'
-
 buildscript {
-    repositories { 
-        jcenter()
+    repositories {
+        mavenCentral()
         gradlePluginPortal()
     }
     dependencies {
@@ -81,4 +78,112 @@ shadowJar {
         include(dependency('com.squareup.okhttp3:okhttp'))
         include(dependency('org.json:json'))
     }
+}
+
+publishing {
+    publications {
+        // Primary publication with CORRECT group ID
+        mavenJava(MavenPublication) {
+            groupId = 'de.bananaco'
+            artifactId = 'bPermissions-Bukkit'
+
+            artifact(tasks.jar)
+            artifact(shadowJar) {
+                classifier = 'all'
+            }
+
+            pom {
+                name = 'bPermissions Bukkit'
+                description = 'Bukkit/Spigot implementation of bPermissions'
+                url = 'https://github.com/rymate1234/bPermissions'
+
+                licenses {
+                    license {
+                        name = 'Attribute Only License'
+                        url = 'http://aol.nexua.org'
+                    }
+                }
+
+                developers {
+                    developer {
+                        id = 'rymate1234'
+                        name = 'bPermissions Team'
+                    }
+                }
+
+                scm {
+                    connection = 'scm:git:git://github.com/rymate1234/bPermissions.git'
+                    url = 'https://github.com/rymate1234/bPermissions'
+                }
+            }
+
+            // Manually specify dependencies since we're not using components.java
+            pom.withXml {
+                def dependenciesNode = asNode().appendNode('dependencies')
+                configurations.implementation.allDependencies.each {
+                    if (it.group != null && it.name != null) {
+                        def dependencyNode = dependenciesNode.appendNode('dependency')
+                        dependencyNode.appendNode('groupId', it.group)
+                        dependencyNode.appendNode('artifactId', it.name)
+                        dependencyNode.appendNode('version', it.version)
+                        dependencyNode.appendNode('scope', 'compile')
+                    }
+                }
+            }
+        }
+
+        // Legacy publication with TYPO group ID for backward compatibility
+        mavenJavaLegacy(MavenPublication) {
+            groupId = 'de.banaco'  // Legacy typo
+            artifactId = 'bPermissions-Bukkit'
+
+            artifact(tasks.jar)
+            artifact(shadowJar) {
+                classifier = 'all'
+            }
+
+            pom {
+                name = 'bPermissions Bukkit (Legacy - Deprecated)'
+                description = 'DEPRECATED: Use de.bananaco:bPermissions-Bukkit instead. This artifact uses the legacy group ID with a typo.'
+                url = 'https://github.com/rymate1234/bPermissions'
+
+                licenses {
+                    license {
+                        name = 'Attribute Only License'
+                        url = 'http://aol.nexua.org'
+                    }
+                }
+
+                developers {
+                    developer {
+                        id = 'rymate1234'
+                        name = 'bPermissions Team'
+                    }
+                }
+
+                scm {
+                    connection = 'scm:git:git://github.com/rymate1234/bPermissions.git'
+                    url = 'https://github.com/rymate1234/bPermissions'
+                }
+            }
+
+            // Manually specify dependencies
+            pom.withXml {
+                def dependenciesNode = asNode().appendNode('dependencies')
+                configurations.implementation.allDependencies.each {
+                    if (it.group != null && it.name != null) {
+                        def dependencyNode = dependenciesNode.appendNode('dependency')
+                        dependencyNode.appendNode('groupId', it.group)
+                        dependencyNode.appendNode('artifactId', it.name)
+                        dependencyNode.appendNode('version', it.version)
+                        dependencyNode.appendNode('scope', 'compile')
+                    }
+                }
+            }
+        }
+    }
+}
+
+tasks.withType(PublishToMavenRepository).configureEach {
+    dependsOn shadowJar
 }

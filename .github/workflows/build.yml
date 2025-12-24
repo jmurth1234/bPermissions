@@ -9,6 +9,9 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
 
     steps:
     - name: Checkout code
@@ -49,3 +52,11 @@ jobs:
         name: coverage-reports
         path: '**/build/reports/jacoco/**'
         retention-days: 30
+
+    - name: Publish to GitHub Packages
+      if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+      run: ./gradlew publish --no-daemon
+      env:
+        GITHUB_ACTOR: ${{ github.actor }}
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_RUN_NUMBER: ${{ github.run_number }}

@@ -8,8 +8,34 @@ buildscript {
     }
 }
 
+ext {
+    buildNumber = System.getenv('GITHUB_RUN_NUMBER') ?: 'SNAPSHOT'
+    baseVersion = '2.13.0'
+    fullVersion = "${baseVersion}-${buildNumber}"
+}
+
 allprojects {
     repositories {
         mavenCentral()
+    }
+}
+
+subprojects {
+    apply plugin: 'maven-publish'
+
+    group = 'de.bananaco'
+    version = rootProject.ext.fullVersion
+
+    publishing {
+        repositories {
+            maven {
+                name = "GitHubPackages"
+                url = uri("https://maven.pkg.github.com/rymate1234/bPermissions")
+                credentials {
+                    username = System.getenv("GITHUB_ACTOR")
+                    password = System.getenv("GITHUB_TOKEN")
+                }
+            }
+        }
     }
 }
