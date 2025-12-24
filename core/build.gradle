@@ -59,7 +59,7 @@ publishing {
         mavenJava(MavenPublication) {
             from components.java
 
-            artifactId = 'bPermissions-API'
+            artifactId = 'bpermissions-api'
 
             pom {
                 name = 'bPermissions API'

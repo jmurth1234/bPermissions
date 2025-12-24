@@ -93,7 +93,7 @@ jobs:
           ```xml
           <dependency>
               <groupId>de.bananaco</groupId>
-              <artifactId>bPermissions-API</artifactId>
+              <artifactId>bpermissions-api</artifactId>
               <version>${{ steps.version.outputs.VERSION }}</version>
           </dependency>
           ```
@@ -101,10 +101,10 @@ jobs:
           **Gradle:**
           ```groovy
           dependencies {
-              implementation 'de.bananaco:bPermissions-API:${{ steps.version.outputs.VERSION }}'
-              implementation 'de.bananaco:bPermissions-Bukkit:${{ steps.version.outputs.VERSION }}'
+              implementation 'de.bananaco:bpermissions-api:${{ steps.version.outputs.VERSION }}'
+              implementation 'de.bananaco:bpermissions-bukkit:${{ steps.version.outputs.VERSION }}'
               // Or use the shadow (fat) JAR:
-              implementation 'de.bananaco:bPermissions-Bukkit:${{ steps.version.outputs.VERSION }}:all'
+              implementation 'de.bananaco:bpermissions-bukkit:${{ steps.version.outputs.VERSION }}:all'
           }
           ```
 

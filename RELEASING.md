@@ -13,10 +13,10 @@ This document explains how bPermissions packages are published to GitHub Package
 **Version format:** `2.13.0-{BUILD_NUMBER}` (e.g., `2.13.0-123`)
 
 **Published artifacts:**
-- `de.bananaco:bPermissions-API:2.13.0-123`
-- `de.bananaco:bPermissions-Bukkit:2.13.0-123` (+ `-all` shadow JAR)
-- `de.banaco:bPermissions-Bukkit:2.13.0-123` (legacy group ID, deprecated)
-- `de.bananaco:bPermissions-Sponge:2.13.0-123-alpha` (+ `-all` shadow JAR)
+- `de.bananaco:bpermissions-api:2.13.0-123`
+- `de.bananaco:bpermissions-bukkit:2.13.0-123` (+ `-all` shadow JAR)
+- `de.banaco:bpermissions-bukkit:2.13.0-123` (legacy group ID, deprecated)
+- `de.bananaco:bpermissions-sponge:2.13.0-123-alpha` (+ `-all` shadow JAR)
 
 **Use case:** Development builds, testing, continuous integration
 
@@ -33,10 +33,10 @@ This document explains how bPermissions packages are published to GitHub Package
 **Version format:** `2.13.0` (clean version, no build number)
 
 **Published artifacts:**
-- `de.bananaco:bPermissions-API:2.13.0`
-- `de.bananaco:bPermissions-Bukkit:2.13.0` (+ `-all` shadow JAR)
-- `de.banaco:bPermissions-Bukkit:2.13.0` (legacy group ID, deprecated)
-- `de.bananaco:bPermissions-Sponge:2.13.0-alpha` (+ `-all` shadow JAR)
+- `de.bananaco:bpermissions-api:2.13.0`
+- `de.bananaco:bpermissions-bukkit:2.13.0` (+ `-all` shadow JAR)
+- `de.banaco:bpermissions-bukkit:2.13.0` (legacy group ID, deprecated)
+- `de.bananaco:bpermissions-sponge:2.13.0-alpha` (+ `-all` shadow JAR)
 
 **Additional actions:**
 - Creates a GitHub Release with release notes
@@ -150,7 +150,7 @@ repositories {
 
 dependencies {
     // Find the latest build number from GitHub Actions
-    implementation 'de.bananaco:bPermissions-API:2.13.0-456'
+    implementation 'de.bananaco:bpermissions-api:2.13.0-456'
 }
 ```
 
@@ -160,7 +160,7 @@ Use the release version from the Releases page:
 
 ```groovy
 dependencies {
-    implementation 'de.bananaco:bPermissions-API:2.14.0'
+    implementation 'de.bananaco:bpermissions-api:2.14.0'
 }
 ```
 
@@ -171,14 +171,22 @@ For Bukkit and Sponge modules with bundled dependencies:
 ```groovy
 dependencies {
     // Shadow JAR with all dependencies included
-    implementation 'de.bananaco:bPermissions-Bukkit:2.14.0:all'
-    implementation 'de.bananaco:bPermissions-Sponge:2.14.0-alpha:all'
+    implementation 'de.bananaco:bpermissions-bukkit:2.14.0:all'
+    implementation 'de.bananaco:bpermissions-sponge:2.14.0-alpha:all'
 }
 ```
 
 ---
 
 ## Troubleshooting
+
+### Artifact ID Requirements (GitHub Packages)
+
+**GitHub Packages requires lowercase artifact IDs:**
+- ✅ `bpermissions-api` (correct)
+- ❌ `bPermissions-API` (will fail with 422 error)
+
+All artifact IDs in this project use lowercase to comply with GitHub Packages requirements. If you fork this project or modify the artifact IDs, ensure they remain all lowercase.
 
 ### Release Workflow Fails
 
@@ -204,8 +212,8 @@ dependencies {
 
 **Clean local Maven cache:**
 ```bash
-rm -rf ~/.m2/repository/de/bananaco/bPermissions-*
-rm -rf ~/.m2/repository/de/banaco/bPermissions-*
+rm -rf ~/.m2/repository/de/bananaco/bpermissions-*
+rm -rf ~/.m2/repository/de/banaco/bpermissions-*
 ```
 
 **Use --refresh-dependencies in Gradle:**

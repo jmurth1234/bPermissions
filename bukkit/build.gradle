@@ -85,7 +85,7 @@ publishing {
         // Primary publication with CORRECT group ID
         mavenJava(MavenPublication) {
             groupId = 'de.bananaco'
-            artifactId = 'bPermissions-Bukkit'
+            artifactId = 'bpermissions-bukkit'
 
             artifact(tasks.jar)
             artifact(shadowJar) {
@@ -135,7 +135,7 @@ publishing {
         // Legacy publication with TYPO group ID for backward compatibility
         mavenJavaLegacy(MavenPublication) {
             groupId = 'de.banaco'  // Legacy typo
-            artifactId = 'bPermissions-Bukkit'
+            artifactId = 'bpermissions-bukkit'
 
             artifact(tasks.jar)
             artifact(shadowJar) {

@@ -81,7 +81,7 @@ shadowJar {
 publishing {
     publications {
         mavenJava(MavenPublication) {
-            artifactId = 'bPermissions-Sponge'
+            artifactId = 'bpermissions-sponge'
 
             artifact(tasks.jar)
             artifact(shadowJar) {
