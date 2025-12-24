@@ -124,7 +124,7 @@ The Sponge module always has `-alpha` appended to its version since it's in earl
 
 All packages are published to:
 ```
-https://github.com/rymate1234/bPermissions/packages
+https://github.com/jmurth1234/bpermissions/packages
 ```
 
 You can view them in your repository under the "Packages" section.
@@ -140,7 +140,7 @@ Use the latest build number from the Actions tab:
 ```groovy
 repositories {
     maven {
-        url = uri("https://maven.pkg.github.com/rymate1234/bPermissions")
+        url = uri("https://maven.pkg.github.com/jmurth1234/bpermissions")
         credentials {
             username = project.findProperty("gpr.user") ?: System.getenv("USERNAME")
             password = project.findProperty("gpr.key") ?: System.getenv("TOKEN")

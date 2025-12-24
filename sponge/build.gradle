@@ -91,7 +91,7 @@ publishing {
             pom {
                 name = 'bPermissions Sponge (Alpha)'
                 description = 'Sponge implementation of bPermissions - Early Alpha Version'
-                url = 'https://github.com/rymate1234/bPermissions'
+                url = 'https://github.com/jmurth1234/bPermissions'
 
                 licenses {
                     license {
@@ -102,14 +102,14 @@ publishing {
 
                 developers {
                     developer {
-                        id = 'rymate1234'
+                        id = 'jmurth1234'
                         name = 'bPermissions Team'
                     }
                 }
 
                 scm {
-                    connection = 'scm:git:git://github.com/rymate1234/bPermissions.git'
-                    url = 'https://github.com/rymate1234/bPermissions'
+                    connection = 'scm:git:git://github.com/jmurth1234/bPermissions.git'
+                    url = 'https://github.com/jmurth1234/bPermissions'
                 }
             }
 

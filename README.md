@@ -61,7 +61,7 @@ bPermissions provides a Java API for developers to integrate with other plugins.
 
 ## Support
 
-If you encounter any issues or have questions, please open an issue on the [issue tracker](https://github.com/rymate1234/bPermissions/issues).
+If you encounter any issues or have questions, please open an issue on the [issue tracker](https://github.com/jmurth1234/bPermissions/issues).
 
 We also have an irc channel on irc.esper.net #bananacode which I rarely check but you can try your luck there.
 

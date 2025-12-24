@@ -87,7 +87,7 @@ jobs:
 
           ### Published Artifacts
 
-          Available on [GitHub Packages](https://github.com/rymate1234/bPermissions/packages):
+          Available on [GitHub Packages](https://github.com/jmurth1234/bPermissions/packages):
 
           **Maven:**
           ```xml
@@ -112,7 +112,7 @@ jobs:
           ```groovy
           repositories {
               maven {
-                  url = uri("https://maven.pkg.github.com/rymate1234/bPermissions")
+                  url = uri("https://maven.pkg.github.com/jmurth1234/bPermissions")
                   credentials {
                       username = project.findProperty("gpr.user") ?: System.getenv("USERNAME")
                       password = project.findProperty("gpr.key") ?: System.getenv("TOKEN")
