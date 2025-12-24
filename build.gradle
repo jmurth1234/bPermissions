@@ -9,16 +9,14 @@ buildscript {
 }
 
 ext {
-    buildNumber = System.getenv('GITHUB_RUN_NUMBER') ?: 'SNAPSHOT'
+    buildNumber = System.getenv('GITHUB_RUN_NUMBER') ?: 'dev'
     baseVersion = '2.13.0'
     // For release builds, use just the base version without suffix
-    // For development builds, append build number and -SNAPSHOT suffix
+    // For development builds, just append build number (GitHub Packages doesn't support SNAPSHOT)
     if (buildNumber == 'release') {
         fullVersion = baseVersion
-    } else if (buildNumber == 'SNAPSHOT') {
-        fullVersion = "${baseVersion}-SNAPSHOT"
     } else {
-        fullVersion = "${baseVersion}-${buildNumber}-SNAPSHOT"
+        fullVersion = "${baseVersion}-${buildNumber}"
     }
 }
 
