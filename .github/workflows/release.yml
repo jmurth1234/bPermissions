@@ -1,0 +1,138 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'  # Triggers on tags like v2.13.0, v2.14.0-beta, etc.
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g., 2.13.0)'
+        required: true
+        type: string
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # For creating GitHub releases
+      packages: write  # For publishing to GitHub Packages
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+        cache: 'gradle'
+
+    - name: Determine version
+      id: version
+      run: |
+        if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          VERSION="${{ inputs.version }}"
+        else
+          # Extract version from tag (remove 'v' prefix if present)
+          VERSION="${GITHUB_REF#refs/tags/v}"
+        fi
+        echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+        echo "Releasing version: $VERSION"
+
+    - name: Update version in build.gradle
+      run: |
+        sed -i "s/baseVersion = '[^']*'/baseVersion = '${{ steps.version.outputs.VERSION }}'/" build.gradle
+        cat build.gradle | grep baseVersion
+
+    - name: Grant execute permission for gradlew
+      run: chmod +x gradlew
+
+    - name: Build with Gradle
+      run: ./gradlew clean build --no-daemon
+      env:
+        GITHUB_RUN_NUMBER: release
+
+    - name: Run tests
+      run: ./gradlew test --no-daemon
+      env:
+        GITHUB_RUN_NUMBER: release
+
+    - name: Generate JaCoCo coverage report
+      run: ./gradlew jacocoTestReport --no-daemon
+      env:
+        GITHUB_RUN_NUMBER: release
+
+    - name: Publish to GitHub Packages
+      run: ./gradlew publish --no-daemon
+      env:
+        GITHUB_ACTOR: ${{ github.actor }}
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_RUN_NUMBER: release
+
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v1
+      with:
+        name: Release ${{ steps.version.outputs.VERSION }}
+        draft: false
+        prerelease: ${{ contains(steps.version.outputs.VERSION, 'alpha') || contains(steps.version.outputs.VERSION, 'beta') || contains(steps.version.outputs.VERSION, 'rc') }}
+        generate_release_notes: true
+        files: |
+          bukkit/build/libs/*.jar
+          core/build/libs/*.jar
+          sponge/build/libs/*.jar
+        body: |
+          ## bPermissions ${{ steps.version.outputs.VERSION }}
+
+          ### Published Artifacts
+
+          Available on [GitHub Packages](https://github.com/rymate1234/bPermissions/packages):
+
+          **Maven:**
+          ```xml
+          <dependency>
+              <groupId>de.bananaco</groupId>
+              <artifactId>bPermissions-API</artifactId>
+              <version>${{ steps.version.outputs.VERSION }}</version>
+          </dependency>
+          ```
+
+          **Gradle:**
+          ```groovy
+          dependencies {
+              implementation 'de.bananaco:bPermissions-API:${{ steps.version.outputs.VERSION }}'
+              implementation 'de.bananaco:bPermissions-Bukkit:${{ steps.version.outputs.VERSION }}'
+              // Or use the shadow (fat) JAR:
+              implementation 'de.bananaco:bPermissions-Bukkit:${{ steps.version.outputs.VERSION }}:all'
+          }
+          ```
+
+          ### Repository Configuration
+          ```groovy
+          repositories {
+              maven {
+                  url = uri("https://maven.pkg.github.com/rymate1234/bPermissions")
+                  credentials {
+                      username = project.findProperty("gpr.user") ?: System.getenv("USERNAME")
+                      password = project.findProperty("gpr.key") ?: System.getenv("TOKEN")
+                  }
+              }
+          }
+          ```
+
+          ### What's Changed
+
+          See the automatically generated release notes below.
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Upload build artifacts to workflow
+      uses: actions/upload-artifact@v4
+      with:
+        name: release-artifacts-${{ steps.version.outputs.VERSION }}
+        path: |
+          bukkit/build/libs/*.jar
+          core/build/libs/*.jar
+          sponge/build/libs/*.jar
+        retention-days: 90
