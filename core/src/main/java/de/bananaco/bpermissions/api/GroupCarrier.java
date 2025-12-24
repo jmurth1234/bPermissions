@@ -1,6 +1,10 @@
 package de.bananaco.bpermissions.api;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
 
 /**
  * This class is any object which carries groups. The group references are
@@ -13,14 +17,13 @@ public abstract class GroupCarrier extends PermissionCarrier {
     private final Set<String> groups;
     private final Set<Group> groupsCalculated;
 
-    @SuppressWarnings({"unchecked", "rawtypes"})
     protected GroupCarrier(Set<String> groups, Set<Permission> permissions,
             String world) {
         super(permissions, world);
         if (groups == null) {
-            groups = new LinkedHashSet();
+            groups = new LinkedHashSet<>();
         }
-        groupsCalculated = new LinkedHashSet();
+        groupsCalculated = new LinkedHashSet<>();
 
         this.groups = groups;
     }
@@ -138,9 +141,9 @@ public abstract class GroupCarrier extends PermissionCarrier {
      * @return
      */
     public List<String> serialiseGroups() {
-        List<String> groups = new ArrayList<String>();
+        List<String> groups = new ArrayList<>();
         // Yes, we're lowercasing everything
-        List<Group> gr = new ArrayList<Group>(getGroups());
+        List<Group> gr = new ArrayList<>(getGroups());
         // also sort it
         sortGroups(gr);
         for (int i = 0; i < gr.size(); i++) {

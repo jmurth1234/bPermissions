@@ -7,26 +7,26 @@ public interface TaskThread {
      *
      * @return tasks.size() > 0
      */
-    public boolean hasTasks();
+    boolean hasTasks();
 
     /**
      * If the tasks are currently running
      *
      * @return running
      */
-    public boolean isRunning();
+    boolean isRunning();
 
     /**
      * Used to prevent any more tasks from running
      *
      * @param running
      */
-    public void setRunning(boolean running);
+    void setRunning(boolean running);
 
     /**
      * Schedule a task to be run
      *
      * @param r
      */
-    public void schedule(TaskRunnable r);
+    void schedule(TaskRunnable r);
 }

@@ -1,6 +1,11 @@
 package de.bananaco.bpermissions.api;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * This class contains the main calculations for a
@@ -22,7 +27,7 @@ public abstract class Calculable extends CalculableMeta {
         super(groups, permissions, world);
         // TODO does this remove the ChatColor?
         this.name = name;
-        this.effectivePermissions = new ArrayList<Permission>();
+        this.effectivePermissions = new ArrayList<>();
     }
 
     /**
@@ -52,9 +57,9 @@ public abstract class Calculable extends CalculableMeta {
      */
     public void calculateEffectivePermissions() throws RecursiveGroupException {
         calculateGroups();
-        List<Permission> calculatedPermissions = new ArrayList<Permission>();
+        List<Permission> calculatedPermissions = new ArrayList<>();
         try {
-            Map<String, Integer> priorities = new HashMap<String, Integer>();
+            Map<String, Integer> priorities = new HashMap<>();
             //System.out.println(serialiseGroups());
             for (String gr : serialiseGroups()) {
                 Group group = getWorldObject().getGroup(gr);
@@ -91,11 +96,13 @@ public abstract class Calculable extends CalculableMeta {
      */
     public List<Permission> getEffectivePermissions() {
         try {
-            if (!hasCalculated || isDirty())
+            if (!hasCalculated || isDirty()) {
                 this.calculateEffectivePermissions();
+            }
 
-            if (effectivePermissions.size() == 0)
+            if (effectivePermissions.size() == 0) {
                 this.calculateEffectivePermissions();
+            }
 
             return effectivePermissions;
         } catch (RecursiveGroupException e) {

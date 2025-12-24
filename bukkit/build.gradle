@@ -12,6 +12,9 @@ buildscript {
 }
 
 apply plugin: 'java'
+apply plugin: 'jacoco'
+apply plugin: 'checkstyle'
+apply plugin: 'com.github.spotbugs'
 apply plugin: 'com.github.johnrengelman.shadow'
 
 description = """bPermissions"""
@@ -29,6 +32,47 @@ dependencies {
     implementation group: 'org.spigotmc', name: 'spigot-api', version: '1.20.4-R0.1-SNAPSHOT'
     implementation 'com.squareup.okhttp3:okhttp:4.10.0'
     implementation 'org.json:json:20220320'
+
+    // Testing dependencies
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.1'
+    testImplementation 'org.mockito:mockito-core:5.8.0'
+    testImplementation 'org.mockito:mockito-junit-jupiter:5.8.0'
+    // Access to core test helpers (WorldTest)
+    testImplementation project(':bPermissions-API').sourceSets.test.output
+}
+
+test {
+    useJUnitPlatform()
+    finalizedBy jacocoTestReport
+}
+
+jacoco {
+    toolVersion = "0.8.11"
+}
+
+jacocoTestReport {
+    dependsOn test
+    reports {
+        xml.required = true
+        html.required = true
+    }
+}
+
+checkstyle {
+    toolVersion = '10.12.5'
+    configFile = rootProject.file('config/checkstyle/checkstyle.xml')
+}
+
+spotbugs {
+    toolVersion = '4.8.3'
+    ignoreFailures = true
+}
+
+tasks.withType(com.github.spotbugs.snom.SpotBugsTask) {
+    reports {
+        xml.required = false
+        html.required = true
+    }
 }
 
 shadowJar {

@@ -9,7 +9,11 @@ import java.io.DataOutputStream;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.util.*;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.Callable;
 /**
  * Modification of https://gist.github.com/evilmidget38/df8dcd7855937e9d1e1f to work with the new name->UUID api
@@ -38,7 +42,7 @@ public class UUIDFetcher implements Callable<Map<String, UUID>> {
         this.namesList = builder.build();
     }
     public Map<String, UUID> call() throws Exception {
-        Map<String, UUID> uuidMap = new HashMap<String, UUID>();
+        Map<String, UUID> uuidMap = new HashMap<>();
         for (List<String> names : this.namesList) {
             String body = buildBody(names);
             //System.out.printf("Requesting %s%n", body);

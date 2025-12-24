@@ -7,7 +7,7 @@ import java.util.Map;
 
 public class CustomNodes {
 
-    private Map<String, Permission> permissions = new HashMap<String, Permission>();
+    private Map<String, Permission> permissions = new HashMap<>();
     private static CustomNodes instance = new CustomNodes();
 
     public static void loadNodes(Collection<Permission> nodes) {
@@ -28,10 +28,10 @@ public class CustomNodes {
         // lowercase checking
         node = node.toLowerCase();
         if (!contains(node)) {
-            return new HashMap<String, Boolean>();
+            return new HashMap<>();
         }
         Map<String, Boolean> children = instance.permissions.get(node).getChildren();
-        Map<String, Boolean> store = new HashMap<String, Boolean>();
+        Map<String, Boolean> store = new HashMap<>();
         for (String child : new HashSet<String>(children.keySet())) {
             if (contains(child)) {
                 store.putAll(getChildren(child));

@@ -1,25 +1,18 @@
 package de.bananaco.bpermissions.api;
 
-import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Set;
 
-import de.bananaco.bpermissions.api.Calculable;
-import de.bananaco.bpermissions.api.CalculableType;
-import de.bananaco.bpermissions.api.Permission;
-import de.bananaco.bpermissions.api.RecursiveGroupException;
-import de.bananaco.bpermissions.api.World;
-import de.bananaco.bpermissions.api.WorldManager;
+public final class ActionExecutor {
 
-import java.util.logging.Level;
-import java.util.logging.Logger;
-
-public class ActionExecutor {
+    private ActionExecutor() {
+        // Utility class
+    }
 
     private static WorldManager wm = WorldManager.getInstance();
 
     public static boolean execute(String name, CalculableType type, String action, String value, String world) {
-        Set<World> worlds = new HashSet<World>();
+        Set<World> worlds = new HashSet<>();
         // add all if null
         if (world == null || (world.equals("global") && wm.isUseGlobalUsers())) {
             worlds.addAll(wm.getAllWorlds());

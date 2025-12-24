@@ -3,7 +3,6 @@ package de.bananaco.bpermissions.imp;
 import de.bananaco.bpermissions.api.*;
 import de.bananaco.bpermissions.util.loadmanager.MainThread;
 import de.bananaco.bpermissions.util.loadmanager.TaskRunnable;
-import de.bananaco.bpermissions.unit.PermissionsTest;
 import de.bananaco.bpermissions.util.Debugger;
 import de.bananaco.permissions.ImportManager;
 import de.bananaco.permissions.fornoobs.BackupPermissionsCommand;
@@ -416,9 +415,9 @@ public class Permissions extends JavaPlugin {
                         if (players.size() == 0) {
                             System.err.println("You need some online players!");
                         } else {
-                            for (Player player : players) {
-                                PermissionsTest.test(player);
-                            }
+                            // Old manual test removed - use automated JUnit tests instead
+                            System.out.println("Manual PermissionsTest has been migrated to JUnit tests");
+                            System.out.println("See bukkit/src/test/java/de/bananaco/bpermissions/imp/ApiLayerIntegrationTest.java");
                         }
                         return true;
                     }

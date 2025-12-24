@@ -2,7 +2,13 @@ package de.bananaco.bpermissions.api;
 
 import de.bananaco.bpermissions.util.Debugger;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
 import java.util.regex.Pattern;
 
 /**
@@ -20,11 +26,10 @@ public abstract class World {
     private Pattern stripColorPattern;
     private final List<CalculableChangeListener> changeListeners;
 
-    @SuppressWarnings({"unchecked", "rawtypes"})
     public World(String world) {
         this.world = world;
-        this.users = new HashMap();
-        this.groups = new HashMap();
+        this.users = new HashMap<>();
+        this.groups = new HashMap<>();
         this.changeListeners = new ArrayList<>();
 
         stripColorPattern = Pattern.compile("(?i)" + String.valueOf(COLOR_CHAR) + "[0-9A-FK-OR]");
@@ -269,9 +274,9 @@ public abstract class World {
     private Map<String, Calculable> getAllAsMap(CalculableType type) {
         try {
             if (type == CalculableType.USER) {
-                return new HashMap(users);
+                return new HashMap<>(users);
             } else if (type == CalculableType.GROUP) {
-                return new HashMap(groups);
+                return new HashMap<>(groups);
             }
         } catch (Exception e) {
             Debugger.log("Error getting " + type.name());
@@ -385,7 +390,7 @@ public abstract class World {
      * Removes any empty groups and any users with just the default group
      */
     protected void cleanup() {
-        List<String> removal = new ArrayList<String>();
+        List<String> removal = new ArrayList<>();
         // Iterate through the users
         for (String user : users.keySet()) {
             User u = users.get(user);

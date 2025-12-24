@@ -8,11 +8,10 @@ public class CalculableMeta extends GroupCarrier {
 
     Map<String, String> effectiveMeta;
 
-    @SuppressWarnings({"unchecked", "rawtypes"})
     protected CalculableMeta(Set<String> groups, Set<Permission> permissions,
             String world) {
         super(groups, permissions, world);
-        effectiveMeta = new HashMap();
+        effectiveMeta = new HashMap<>();
     }
 
     /**
@@ -22,10 +21,10 @@ public class CalculableMeta extends GroupCarrier {
      */
     public void calculateEffectiveMeta() throws RecursiveGroupException {
         try {
-            HashMap<String, String> calculatedMeta = new HashMap<String, String>();
+            HashMap<String, String> calculatedMeta = new HashMap<>();
 
             // Implement meta priorities
-            Map<String, Integer> pr = new HashMap<String, Integer>();
+            Map<String, Integer> pr = new HashMap<>();
 
             for (String gr : serialiseGroups()) {
                 Group group = WorldManager.getInstance().getWorld(getWorld()).getGroup(gr);

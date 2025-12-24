@@ -1,9 +1,13 @@
 version 'early-alpha-do-not-use'
 
 apply plugin: 'java'
+apply plugin: 'jacoco'
+apply plugin: 'checkstyle'
+apply plugin: 'com.github.spotbugs'
 apply plugin: 'com.github.johnrengelman.shadow'
 
-sourceCompatibility = 8
+sourceCompatibility = 1.17
+targetCompatibility = 1.17
 
 repositories {
     mavenCentral()
@@ -25,9 +29,47 @@ buildscript {
 
 
 dependencies {
-    // testCompile group: 'junit', name: 'junit', version: '4.11'
     implementation 'org.spongepowered:spongeapi:4.1.0'
     implementation project(":bPermissions-API")
+
+    // Testing dependencies
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.1'
+    testImplementation 'org.mockito:mockito-core:5.8.0'
+    testImplementation 'org.mockito:mockito-junit-jupiter:5.8.0'
+}
+
+test {
+    useJUnitPlatform()
+    finalizedBy jacocoTestReport
+}
+
+jacoco {
+    toolVersion = "0.8.11"
+}
+
+jacocoTestReport {
+    dependsOn test
+    reports {
+        xml.required = true
+        html.required = true
+    }
+}
+
+checkstyle {
+    toolVersion = '10.12.5'
+    configFile = rootProject.file('config/checkstyle/checkstyle.xml')
+}
+
+spotbugs {
+    toolVersion = '4.8.3'
+    ignoreFailures = true
+}
+
+tasks.withType(com.github.spotbugs.snom.SpotBugsTask) {
+    reports {
+        xml.required = false
+        html.required = true
+    }
 }
 
 shadowJar {

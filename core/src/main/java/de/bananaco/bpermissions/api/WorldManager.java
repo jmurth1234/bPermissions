@@ -23,8 +23,8 @@ public class WorldManager {
 
     private static WorldManager instance = null;
     private World defaultWorld = null;
-    private Map<String, String> mirrors = new HashMap<String, String>();
-    Map<String, World> worlds = new HashMap<String, World>();
+    private Map<String, String> mirrors = new HashMap<>();
+    Map<String, World> worlds = new HashMap<>();
     private boolean autoSave = false;
     private boolean useGlobalFiles = false;
     private boolean useGlobalUsers = false;
@@ -107,9 +107,8 @@ public class WorldManager {
         return worlds.containsKey(name);
     }
 
-    @SuppressWarnings({"rawtypes", "unchecked"})
     public Set<World> getAllWorlds() {
-        Set<World> worlds = new HashSet();
+        Set<World> worlds = new HashSet<>();
         // Add the global world
         if (useGlobalFiles && getDefaultWorld() != null) {
             worlds.add(getDefaultWorld());

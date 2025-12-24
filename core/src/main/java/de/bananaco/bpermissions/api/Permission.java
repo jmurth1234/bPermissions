@@ -39,6 +39,9 @@ public class Permission extends de.bananaco.bpermissions.api.util.Permission {
      * @return Permission
      */
     public static Permission loadFromString(String perm) {
+        if (perm == null || perm.isEmpty()) {
+            return null;
+        }
         if (perm.startsWith("^")) {
             return new Permission(perm.replace("^", ""), false);
         }
@@ -59,7 +62,7 @@ public class Permission extends de.bananaco.bpermissions.api.util.Permission {
 
     public static Map<String, Boolean> reverse(Map<String, Boolean> perms) {
         // reverse everything for negatives
-        Map<String, Boolean> newChildren = new HashMap<String, Boolean>();
+        Map<String, Boolean> newChildren = new HashMap<>();
         for (String key : perms.keySet()) {
             newChildren.put(key, !perms.get(key));
         }
@@ -94,7 +97,7 @@ public class Permission extends de.bananaco.bpermissions.api.util.Permission {
      */
     public Map<String, Boolean> getChildren() {
         if (children == null) {
-            return new HashMap<String, Boolean>();
+            return new HashMap<>();
         } else {
             return new HashMap<String, Boolean>(children);
         }

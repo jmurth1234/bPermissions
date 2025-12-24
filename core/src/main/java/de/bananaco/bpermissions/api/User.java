@@ -1,6 +1,5 @@
 package de.bananaco.bpermissions.api;
 
-import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -18,10 +17,9 @@ public class User extends CalculableWrapper {
         this(name, null, null, w.getName(), w);
     }
 
-    @SuppressWarnings({"rawtypes", "unchecked"})
     public User(String name, List<String> groups, Set<Permission> permissions,
             String world, World w) {
-        super(name, groups == null ? new LinkedHashSet() : new LinkedHashSet(groups),
+        super(name, groups == null ? new LinkedHashSet<>() : new LinkedHashSet<>(groups),
                 permissions, world);
         this.w = w;
     }

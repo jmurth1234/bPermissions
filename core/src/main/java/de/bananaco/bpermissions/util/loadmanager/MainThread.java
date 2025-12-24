@@ -14,9 +14,9 @@ public class MainThread extends Thread implements TaskThread {
         return thread;
     }
     // a list of tasks
-    private List<Runnable> load = new ArrayList<Runnable>();
-    private List<Runnable> save = new ArrayList<Runnable>();
-    private List<Runnable> server = new ArrayList<Runnable>();
+    private List<Runnable> load = new ArrayList<>();
+    private List<Runnable> save = new ArrayList<>();
+    private List<Runnable> server = new ArrayList<>();
     private boolean running = true;
     private boolean started = false;
 
@@ -76,7 +76,7 @@ public class MainThread extends Thread implements TaskThread {
         if (type == TaskType.SERVER) {
             return server;
         }
-        return new ArrayList<Runnable>();
+        return new ArrayList<>();
     }
 
     // from the interface
@@ -121,8 +121,9 @@ public class MainThread extends Thread implements TaskThread {
     }
 
     public void schedule(TaskRunnable r) {
-        if (tasksCount() > 10 && (r.getType() == TaskType.LOAD || r.getType() == TaskType.SAVE))
+        if (tasksCount() > 10 && (r.getType() == TaskType.LOAD || r.getType() == TaskType.SAVE)) {
             return;
+        }
 
         getTasks(r.getType()).add(r);
     }

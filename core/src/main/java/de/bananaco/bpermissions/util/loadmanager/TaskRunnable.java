@@ -2,11 +2,11 @@ package de.bananaco.bpermissions.util.loadmanager;
 
 public interface TaskRunnable extends Runnable {
 
-    static enum TaskType {
+    enum TaskType {
         SAVE,
         LOAD,
         SERVER
     }
 
-    public TaskType getType();
+    TaskType getType();
 }

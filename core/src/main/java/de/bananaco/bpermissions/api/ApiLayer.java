@@ -2,7 +2,11 @@ package de.bananaco.bpermissions.api;
 
 import de.bananaco.bpermissions.util.Debugger;
 
-import java.util.*;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 /**
  * Adds a super easy to use static interface to bPermissions 2
@@ -16,9 +20,13 @@ import java.util.*;
  * can be created when needed (new Permission(String, Boolean)) and will
  * override any existing permission by that name.
  */
-public class ApiLayer {
-    // This should never null, and if it does something horrible has gone wrong and that should be the least of our worries
+public final class ApiLayer {
 
+    private ApiLayer() {
+        // Utility class
+    }
+
+    // This should never null, and if it does something horrible has gone wrong and that should be the least of our worries
     private static WorldManager wm = WorldManager.getInstance();
 
     /*
@@ -165,7 +173,7 @@ public class ApiLayer {
      * @return Map<String, Boolean> permissions
      */
     public static synchronized Map<String, Boolean> getEffectivePermissions(String world, CalculableType type, String name, boolean recalculate) {
-        Map<String, Boolean> permissions = new LinkedHashMap<String, Boolean>();
+        Map<String, Boolean> permissions = new LinkedHashMap<>();
         // our two thingies
         World global;
         World w;
@@ -175,13 +183,17 @@ public class ApiLayer {
         // do we apply globals?
         if (wm.getUseGlobalFiles()) {
             Calculable c = global.get(name, type);
-            if (recalculate) c.setDirty(true);
+            if (recalculate) {
+                c.setDirty(true);
+            }
             permissions.putAll(((MapCalculable) c).getMappedPermissions());
         }
         // now we apply the per-world stuff (or globals if w==null)
         if (w != null) {
             Calculable c = w.get(name, type);
-            if (recalculate) c.setDirty(true);
+            if (recalculate) {
+                c.setDirty(true);
+            }
             permissions.putAll(((MapCalculable) c).getMappedPermissions());
         }
         // custom node checking

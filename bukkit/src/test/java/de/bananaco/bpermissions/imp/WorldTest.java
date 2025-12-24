@@ -1,10 +1,14 @@
-package de.bananaco.bpermissions.unit;
+package de.bananaco.bpermissions.imp;
 
 import de.bananaco.bpermissions.api.CalculableType;
 import de.bananaco.bpermissions.api.World;
 
 import java.util.UUID;
 
+/**
+ * Test implementation of World for use in unit and integration tests.
+ * Provides no-op implementations of all abstract methods.
+ */
 public class WorldTest extends World {
 
     public WorldTest(String world) {
@@ -58,11 +62,12 @@ public class WorldTest extends World {
 
     @Override
     public UUID getUUID(String player) {
-        return null;
+        // Return a fake UUID based on player name for testing
+        return UUID.nameUUIDFromBytes(player.getBytes());
     }
 
     @Override
     public void setDefaultGroup(String group) {
-        // TODO Auto-generated method stub
+        // No-op for tests
     }
 }
