@@ -30,6 +30,12 @@ dependencies {
     implementation 'com.squareup.okhttp3:okhttp:4.10.0'
     implementation 'org.json:json:20220320'
 
+    // Database storage dependencies
+    implementation 'org.mongodb:mongodb-driver-sync:4.11.0'
+    implementation 'mysql:mysql-connector-java:8.0.33'
+    implementation 'com.zaxxer:HikariCP:5.0.1'
+    implementation 'com.google.code.gson:gson:2.10.1'
+
     // Testing dependencies
     testImplementation 'org.junit.jupiter:junit-jupiter:5.10.1'
     testImplementation 'org.mockito:mockito-core:5.8.0'
@@ -77,6 +83,10 @@ shadowJar {
         include(dependency(':bPermissions-API'))
         include(dependency('com.squareup.okhttp3:okhttp'))
         include(dependency('org.json:json'))
+        include(dependency('org.mongodb:mongodb-driver-sync'))
+        include(dependency('mysql:mysql-connector-java'))
+        include(dependency('com.zaxxer:HikariCP'))
+        include(dependency('com.google.code.gson:gson'))
     }
 }
 

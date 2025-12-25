@@ -1,8 +1,11 @@
 package de.bananaco.bpermissions.imp;
 
 import java.io.File;
+import java.util.HashMap;
+import java.util.Map;
 
 import de.bananaco.bpermissions.util.Debugger;
+import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.YamlConfiguration;
 
 import de.bananaco.bpermissions.api.WorldManager;
@@ -20,6 +23,12 @@ public class Config {
     private boolean trackLimit = false;
     private boolean useGlobalUsers = false;
     private boolean useCustomPermissible = false;
+
+    // Storage configuration
+    private String storageBackend = "yaml";
+    private int pollInterval = 5;
+    private Map<String, Object> mongoConfig = new HashMap<>();
+    private Map<String, Object> mysqlConfig = new HashMap<>();
 
     public void load() {
         try {
@@ -66,6 +75,47 @@ public class Config {
         } else {
             track = new ReplaceGroupPromotion();
         }
+        // Load storage configuration
+        ConfigurationSection storageSection = config.getConfigurationSection("storage");
+        if (storageSection == null) {
+            // Create default storage configuration
+            config.set("storage.backend", "yaml");
+            config.set("storage.poll-interval", 5);
+            config.set("storage.mongodb.connection-string", "mongodb://localhost:27017");
+            config.set("storage.mongodb.database", "bpermissions");
+            config.set("storage.mongodb.server-id", "server-1");
+            config.set("storage.mysql.host", "localhost");
+            config.set("storage.mysql.port", 3306);
+            config.set("storage.mysql.database", "bpermissions");
+            config.set("storage.mysql.username", "root");
+            config.set("storage.mysql.password", "password");
+            config.set("storage.mysql.server-id", "server-1");
+            storageSection = config.getConfigurationSection("storage");
+        }
+
+        // Load storage backend type
+        storageBackend = config.getString("storage.backend", "yaml");
+        pollInterval = config.getInt("storage.poll-interval", 5);
+
+        // Load MongoDB configuration
+        ConfigurationSection mongoSection = config.getConfigurationSection("storage.mongodb");
+        if (mongoSection != null) {
+            mongoConfig.put("connection-string", mongoSection.getString("connection-string", "mongodb://localhost:27017"));
+            mongoConfig.put("database", mongoSection.getString("database", "bpermissions"));
+            mongoConfig.put("server-id", mongoSection.getString("server-id", "server-1"));
+        }
+
+        // Load MySQL configuration
+        ConfigurationSection mysqlSection = config.getConfigurationSection("storage.mysql");
+        if (mysqlSection != null) {
+            mysqlConfig.put("host", mysqlSection.getString("host", "localhost"));
+            mysqlConfig.put("port", mysqlSection.getInt("port", 3306));
+            mysqlConfig.put("database", mysqlSection.getString("database", "bpermissions"));
+            mysqlConfig.put("username", mysqlSection.getString("username", "root"));
+            mysqlConfig.put("password", mysqlSection.getString("password", "password"));
+            mysqlConfig.put("server-id", mysqlSection.getString("server-id", "server-1"));
+        }
+
         // Then set the worldmanager
         WorldManager.getInstance().setAutoSave(autoSave);
         // Load the track
@@ -94,5 +144,21 @@ public class Config {
 
     public boolean useCustomPermissible() {
         return useCustomPermissible;
+    }
+
+    public String getStorageBackend() {
+        return storageBackend;
+    }
+
+    public int getPollInterval() {
+        return pollInterval;
+    }
+
+    public Map<String, Object> getMongoConfig() {
+        return mongoConfig;
+    }
+
+    public Map<String, Object> getMysqlConfig() {
+        return mysqlConfig;
     }
 }
