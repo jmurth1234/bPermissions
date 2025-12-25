@@ -601,12 +601,13 @@ de.bananaco.permissions             # Legacy API - backward compatibility
 ### Test Framework
 - **JUnit 5** (Jupiter)
 - **Mockito** for mocking
-- **JaCoCo** for coverage
+- **JaCoCo** for code coverage
+- **SLF4J + Logback** for test logging
 
 ### Test Organization
 - Tests mirror source structure: `src/test/java` matches `src/main/java`
 - Test classes named `{ClassName}Test.java`
-- Shared test utilities in `core` module (e.g., `WorldTest`)
+- Shared test utilities in `core` module (e.g., `WorldTest`, `TestLogger`)
 
 ### Running Tests
 
@@ -618,12 +619,40 @@ de.bananaco.permissions             # Legacy API - backward compatibility
 ./gradlew :bukkit:test
 ./gradlew :core:test
 
+# Run tests with verbose output and logging
+./gradlew test --info
+
 # Generate coverage report
 ./gradlew jacocoTestReport
 
 # View coverage report
 open bukkit/build/reports/jacoco/test/html/index.html
 ```
+
+### Test Logging
+
+Tests output logs via Logback with the following configuration:
+
+**Log Level Configuration** (in `src/test/resources/logback-test.xml`):
+- Root level: `INFO` - shows test summary
+- bPermissions level: `DEBUG` - detailed component logging
+- Can enable `TRACE` for even more verbose output
+
+**Using TestLogger in Tests**:
+```java
+import de.bananaco.bpermissions.api.TestLogger;
+
+@Test
+void myTest() {
+    TestLogger.info("Starting test");
+    TestLogger.debug("Debug information");
+    // test assertions...
+}
+```
+
+**Viewing Test Logs**:
+- Run with `./gradlew test --info` to see all logs in console output
+- Logs include timestamp, thread, log level, and message
 
 ### Coverage Reports
 - Generated in `{module}/build/reports/jacoco/test/html/`
@@ -643,7 +672,7 @@ open bukkit/build/reports/jacoco/test/html/index.html
 1. Checkout code
 2. Set up JDK 17
 3. Build with Gradle
-4. Run tests
+4. Run tests (with `--info` flag for full logging output)
 5. Generate JaCoCo coverage report
 6. Upload build artifacts (retention: 30 days)
 7. Upload coverage reports (retention: 30 days)
@@ -664,7 +693,7 @@ open bukkit/build/reports/jacoco/test/html/index.html
 1. Determine version from tag or input
 2. Update `baseVersion` in `build.gradle`
 3. Build with `GITHUB_RUN_NUMBER=release` (produces clean version)
-4. Run tests
+4. Run tests (with `--info` flag for full logging output)
 5. Generate coverage report
 6. **Publish to GitHub Packages**
 7. **Create GitHub Release**

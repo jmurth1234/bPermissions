@@ -55,7 +55,7 @@ jobs:
         GITHUB_RUN_NUMBER: release
 
     - name: Run tests
-      run: ./gradlew test --no-daemon
+      run: ./gradlew test --no-daemon --info
       env:
         GITHUB_RUN_NUMBER: release
 

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <!-- Console appender for test output -->
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- Root logger configuration -->
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+    </root>
+
+    <!-- Increase verbosity for bPermissions components -->
+    <logger name="de.bananaco.bpermissions" level="DEBUG"/>
+
+    <!-- Optional: increase verbosity for specific test classes -->
+    <!-- <logger name="de.bananaco.bpermissions.imp" level="TRACE"/> -->
+
+    <!-- Reduce verbosity for external libraries if needed -->
+    <!-- <logger name="org.mockito" level="WARN"/> -->
+</configuration>

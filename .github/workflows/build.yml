@@ -31,7 +31,7 @@ jobs:
       run: ./gradlew build --no-daemon
 
     - name: Run tests
-      run: ./gradlew test --no-daemon
+      run: ./gradlew test --no-daemon --info
 
     - name: Generate JaCoCo coverage report
       run: ./gradlew jacocoTestReport --no-daemon
