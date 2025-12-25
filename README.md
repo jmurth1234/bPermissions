@@ -84,6 +84,18 @@ Run tests for a specific module:
 ./gradlew :bukkit:test
 ```
 
+To see test output and logging (useful for debugging):
+
+```bash
+./gradlew test --info
+```
+
+Or increase verbosity further:
+
+```bash
+./gradlew test -i
+```
+
 ### Coverage Reports
 
 Generate a JaCoCo coverage report:
