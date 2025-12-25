@@ -223,163 +223,37 @@ ActionExecutor - utility for executing permission actions
 
 #### Permission Calculation Algorithm
 
-**Step-by-Step Process:**
+**Process Overview** (see `Calculable.java` for implementation):
+1. Check dirty flag → recalculate if needed
+2. Resolve groups by priority (higher priority overwrites lower)
+3. Apply direct permissions (always override groups)
+4. Cache in Map for fast lookup
+5. Check permission with wildcard support (`*`, `admin.*`)
 
-```java
-// When user.hasPermission("admin.panel") is called:
-
-1. Check if calculations are dirty
-   └─ If dirty: recalculate effective permissions
-
-2. calculateEffectivePermissions()
-   ├─ Resolve group names to Group objects
-   ├─ For each group (sorted by priority):
-   │  ├─ Get group's effective permissions
-   │  └─ Add to list (higher priority overwrites)
-   ├─ Add direct permissions (always override groups)
-   └─ Store in effectivePermissions List
-
-3. Convert to Map for fast lookup
-   └─ calculateMappedPermissions()
-      └─ permissions.put(node.toLowerCase(), isTrue)
-
-4. Check permission in Map
-   ├─ Exact match: "admin.panel" → return true/false
-   ├─ Wildcard match: "admin.*" → return true/false
-   ├─ Root wildcard: "*" → return true/false
-   └─ Default: return false (deny)
-```
-
-**Priority System Example:**
-
-```java
-// Group hierarchy with priorities
-Group defaultGroup = new Group("default", world);
-defaultGroup.setValue("priority", "1");
-defaultGroup.setValue("prefix", "[Member]");
-
-Group vipGroup = new Group("vip", world);
-vipGroup.setValue("priority", "10");
-vipGroup.setValue("prefix", "[VIP]");
-
-Group adminGroup = new Group("admin", world);
-adminGroup.setValue("priority", "100");
-adminGroup.setValue("prefix", "[Admin]");
-
-User user = new User("PlayerName", world);
-user.addGroup("default");
-user.addGroup("vip");
-user.addGroup("admin");
-user.calculateEffectiveMeta();
-
-// Result: prefix = "[Admin]" (highest priority wins)
-```
+**Priority System**: Groups with higher priority values override lower ones (e.g., admin:100 > vip:10 > default:1).
 
 #### Event System Architecture
 
-**CalculableChangeListener Interface:**
+**ChangeType Enum** (see `CalculableChangeListener.java`):
+- `ADD_GROUP`, `REMOVE_GROUP`, `REPLACE_GROUP`, `SET_GROUP` - Group modifications
+- `ADD_PERMISSION`, `REMOVE_PERMISSION` - Permission modifications
+- `SET_VALUE`, `REMOVE_VALUE` - Metadata modifications
 
-```java
-public interface CalculableChangeListener {
-    void onChange(CalculableChange change);
-}
-```
-
-**ChangeType Enum:**
-- `ADD_GROUP` - Group added to user/group
-- `REMOVE_GROUP` - Group removed
-- `REPLACE_GROUP` - Group replaced (promotion)
-- `SET_GROUP` - Set single group (clear others)
-- `ADD_PERMISSION` - Permission added
-- `REMOVE_PERMISSION` - Permission removed
-- `SET_VALUE` - Metadata key set
-- `REMOVE_VALUE` - Metadata key removed
-
-**Event Flow:**
-
-```
-User.addPermission("admin.panel", true)
-  ↓
-CalculableWrapper intercepts
-  ↓
-CalculableChange created with:
-  - calculable: User object
-  - type: ADD_PERMISSION
-  - permission: "admin.panel"
-  - world: "world"
-  ↓
-World.runChangeListeners(change)
-  ↓
-All registered listeners notified
-  ↓
-Auto-save triggered (if enabled)
-  ↓
-Dirty flag set for recalculation
-  ↓
-Cascaded to dependent calculables
-```
+**Event Flow**: Modification → CalculableWrapper intercepts → CalculableChange created → World.runChangeListeners() → auto-save triggered → dirty flags cascaded
 
 #### WorldManager and ApiLayer
 
 **WorldManager** (`core/src/main/java/de/bananaco/bpermissions/api/WorldManager.java`)
-
-```java
-public class WorldManager {
-    private static WorldManager instance = null;
-    private World defaultWorld = null;
-    private Map<String, String> mirrors = new HashMap<>();  // World aliases
-    private Map<String, World> worlds = new HashMap<>();
-    private boolean autoSave = false;
-    private boolean useGlobalFiles = false;
-    private boolean useGlobalUsers = false;
-
-    // Singleton access
-    public static WorldManager getInstance() {
-        if (instance == null) {
-            instance = new WorldManager();
-        }
-        return instance;
-    }
-
-    // Key methods
-    public World getWorld(String name) {
-        // Handles mirrors and default world
-    }
-
-    public void createWorld(String name, World world) {
-        worlds.put(name.toLowerCase(), world);
-    }
-}
-```
+- Singleton managing all World instances
+- Handles world mirrors (aliases)
+- Manages default world and global file settings
+- Key methods: `getWorld()`, `createWorld()`, `getInstance()`
 
 **ApiLayer** (`core/src/main/java/de/bananaco/bpermissions/api/ApiLayer.java`)
-
-Static utility interface for external plugins:
-
-```java
-public final class ApiLayer {
-    // Permission queries
-    public static boolean hasPermission(String world, CalculableType type,
-                                       String name, String node)
-    public static Permission[] getPermissions(String world, CalculableType type,
-                                             String name)
-    public static Map<String, Boolean> getEffectivePermissions(String world,
-                                                               CalculableType type,
-                                                               String name)
-
-    // Modifications
-    public static void addPermission(String world, CalculableType type,
-                                    String name, Permission perm)
-    public static void addGroup(String world, CalculableType type,
-                               String name, String group)
-    public static void setValue(String world, CalculableType type,
-                               String name, String key, String value)
-
-    // Listeners
-    public static void addChangeListener(String world,
-                                        CalculableChangeListener listener)
-}
-```
+- Static utility interface for external plugins
+- Permission queries: `hasPermission()`, `getPermissions()`, `getEffectivePermissions()`
+- Modifications: `addPermission()`, `addGroup()`, `setValue()`
+- Event system: `addChangeListener()`
 
 ---
 
@@ -389,153 +263,23 @@ The Bukkit module implements the core API for Bukkit/Spigot servers, integrating
 
 #### Plugin Lifecycle
 
-**Initialization Sequence:**
-
-```
-Server Startup
-  │
-  ├─ onLoad()
-  │  └─ Mirrors.load()
-  │     └─ Load mirrors.yml (world aliases)
-  │
-  ├─ onEnable()
-  │  ├─ MainThread.getInstance().start()
-  │  │  └─ Start async task processor
-  │  │
-  │  ├─ Config.load()
-  │  │  ├─ Load config.yml
-  │  │  └─ Initialize promotion track system
-  │  │
-  │  ├─ SuperPermissionHandler.init()
-  │  │  └─ Register with Bukkit permission system
-  │  │
-  │  ├─ WorldLoader (listener)
-  │  │  └─ Handle world initialization events
-  │  │
-  │  ├─ DefaultWorld.load()
-  │  │  └─ Load global world configuration
-  │  │
-  │  ├─ Register Commands
-  │  │  ├─ /user, /group, /world
-  │  │  ├─ /promote, /demote
-  │  │  └─ /permissions
-  │  │
-  │  ├─ CustomNodes.load()
-  │  │  └─ Register custom permission definitions
-  │  │
-  │  └─ Setup online players
-  │     └─ Load permissions and inject Permissibles
-  │
-  └─ onDisable()
-     ├─ Wait for async tasks to complete
-     ├─ Save all worlds
-     └─ Shutdown MainThread
-```
+**Initialization**: onLoad() → Mirrors.load(mirrors.yml); onEnable() → MainThread.start() → Config.load(config.yml, tracks) → SuperPermissionHandler.init() → WorldLoader listener → DefaultWorld.load() → Register commands (/user, /group, /world, /promote, /demote, /permissions) → CustomNodes.load() → Setup online players; onDisable() → Wait for tasks → Save worlds → Shutdown MainThread
 
 #### Bukkit Permission Integration
 
 **SuperPermissionHandler** (`bukkit/src/main/java/de/bananaco/bpermissions/imp/SuperPermissionHandler.java`)
-
-Bridges bPermissions with Bukkit's SuperPerms system:
-
-```java
-@EventHandler(priority = EventPriority.LOWEST)
-public void onPlayerLogin(PlayerLoginEvent event) {
-    setupPlayer(event.getPlayer(), false);
-}
-
-private void setupPlayer(Player player, boolean recalculate) {
-    // 1. Get effective permissions from bPermissions
-    UUID uuid = player.getUniqueId();
-    String world = player.getWorld().getName();
-    Map<String, Boolean> perms = ApiLayer.getEffectivePermissions(
-        world, CalculableType.USER, uuid.toString()
-    );
-
-    // 2. Inject custom Permissible (if enabled)
-    if (useCustomPermissible) {
-        PermissibleBase base = new bPermissible(player, perms);
-        Injector.inject(player, base);
-    }
-
-    // 3. Set SuperPerms permissions
-    setPermissions(permissible, plugin, perms);
-
-    // 4. Set metadata (prefix, suffix)
-    String prefix = ApiLayer.getValue(world, CalculableType.USER,
-                                     uuid.toString(), "prefix");
-    player.setMetadata("prefix", new FixedMetadataValue(plugin, prefix));
-}
-```
+- Bridges bPermissions with Bukkit's SuperPerms system
+- On player login: gets effective permissions → injects custom Permissible → sets SuperPerms → sets metadata
 
 **bPermissible** (`bukkit/src/main/java/de/bananaco/bpermissions/imp/bPermissible.java`)
-
-Custom Permissible with dual-check system:
-
-```java
-public class bPermissible extends PermissibleBase {
-    private final Map<String, Boolean> bpermissions;
-    private final PermissibleBase oldpermissible;
-
-    @Override
-    public boolean hasPermission(String perm) {
-        // Step 1: Check Bukkit SuperPerms
-        boolean ret = hasSuperPerm(perm);
-
-        // Step 2: If not set, check bPermissions
-        if (!ret && !isPermissionSet(perm)) {
-            ret = Calculable.hasPermission(perm, bpermissions);
-        }
-
-        return ret;
-    }
-
-    private void updatePerms() {
-        // Expand Bukkit plugin permissions with children
-        for (String perm : new HashSet<>(bpermissions.keySet())) {
-            Permission bukkit = Bukkit.getPluginManager().getPermission(perm);
-            if (bukkit != null) {
-                bpermissions.putAll(bukkit.getChildren());
-            }
-        }
-    }
-}
-```
+- Custom Permissible with dual-check system
+- Checks Bukkit SuperPerms first, falls back to bPermissions
+- Expands Bukkit plugin permissions with children nodes
 
 **Injector** (`bukkit/src/main/java/de/bananaco/bpermissions/imp/Injector.java`)
-
-Reflection-based Permissible injection:
-
-```java
-public static PermissibleBase inject(CommandSender sender,
-                                     Permissible newpermissible) {
-    try {
-        // Get versioned class name (e.g., v1_20_R3)
-        String className = getVersionedClassName("entity.CraftHumanEntity");
-        Class<?> craftClass = Class.forName(className);
-
-        // Access private "perm" field via reflection
-        Field permField = craftClass.getDeclaredField("perm");
-        permField.setAccessible(true);
-
-        // Save old permissible
-        PermissibleBase oldperm = (PermissibleBase) permField.get(sender);
-
-        // Copy attachments
-        for (PermissionAttachment attach : oldperm.getAttachments()) {
-            newpermissible.addAttachment(attach.getPlugin());
-        }
-
-        // Replace permissible
-        permField.set(sender, newpermissible);
-
-        return oldperm;
-    } catch (Exception e) {
-        e.printStackTrace();
-        return null;
-    }
-}
-```
+- Reflection-based Permissible injection into CraftBukkit
+- Handles version-specific class names (e.g., v1_20_R3)
+- Preserves permission attachments from old Permissible
 
 #### YAML Configuration System
 
@@ -559,78 +303,10 @@ plugins/bPermissions/
 ```
 
 **YamlWorld** (`bukkit/src/main/java/de/bananaco/bpermissions/imp/YamlWorld.java`)
-
-Handles persistence for a world:
-
-```java
-public class YamlWorld extends World {
-    private File ufile;  // users.yml
-    private File gfile;  // groups.yml
-
-    @Override
-    public void load() {
-        // Schedule async load
-        MainThread.getInstance().schedule(new TaskRunnable() {
-            public void run() {
-                loadUnsafe();
-            }
-            public TaskType getType() {
-                return TaskType.LOAD;
-            }
-        });
-    }
-
-    private void loadUnsafe() {
-        // 1. Load YAML files
-        YamlConfiguration usersYaml = new YamlConfiguration();
-        usersYaml.load(ufile);
-
-        // 2. Parse users section
-        ConfigurationSection users = usersYaml.getConfigurationSection("users");
-        for (String uuid : users.getKeys(false)) {
-            User user = getUser(uuid);
-
-            // Load permissions
-            List<String> perms = users.getStringList(uuid + ".permissions");
-            for (String perm : perms) {
-                Permission p = Permission.loadFromString(perm);
-                user.addPermission(p.name(), p.isTrue());
-            }
-
-            // Load groups
-            List<String> groups = users.getStringList(uuid + ".groups");
-            for (String group : groups) {
-                user.addGroup(group);
-            }
-
-            // Load metadata
-            ConfigurationSection meta = users.getConfigurationSection(uuid + ".meta");
-            for (String key : meta.getKeys(false)) {
-                user.setValue(key, meta.getString(key));
-            }
-        }
-
-        // 3. Calculate effective permissions
-        for (Calculable c : getAll(CalculableType.USER)) {
-            c.calculateMappedPermissions();
-            c.calculateEffectiveMeta();
-        }
-    }
-
-    @Override
-    public void save() {
-        // Schedule async save
-        MainThread.getInstance().schedule(new TaskRunnable() {
-            public void run() {
-                saveUnsafe(false);
-            }
-            public TaskType getType() {
-                return TaskType.SAVE;
-            }
-        });
-    }
-}
-```
+- Handles persistence for a world (users.yml, groups.yml)
+- Async load: parses YAML → loads permissions → loads groups → loads metadata → calculates effective permissions
+- Async save: schedules save task via MainThread
+- Uses Bukkit's YamlConfiguration API
 
 **users.yml Format:**
 
@@ -676,52 +352,13 @@ groups:
 
 #### Command System
 
-**Command Architecture:**
-
-```
-Plugin.onCommand()
-  ├─ Check permissions
-  ├─ Route to handler:
-  │  ├─ /user, /group, /world → OldUserGroupCommand
-  │  ├─ /promote, /demote → PromotionTrack
-  │  ├─ /exec → ActionExecutor
-  │  └─ /permissions → Config management
-  └─ Execute action
-```
+**Command Architecture** (see `Permissions.java`):
+- Routes: `/user`, `/group`, `/world` → OldUserGroupCommand; `/promote`, `/demote` → PromotionTrack; `/permissions` → Config management
 
 **Command Session Management** (`bukkit/src/main/java/de/bananaco/bpermissions/imp/Commands.java`)
-
-Stores per-player command context:
-
-```java
-public class Commands {
-    private String world;              // Selected world
-    private CalculableType calc;       // USER or GROUP
-    private String name;               // Selected object name
-
-    // Command chaining example:
-    // /user PlayerName          → setCalculable(USER, "PlayerName")
-    // /group admin addgroup     → addGroup("admin")
-    // /user list permissions    → listPermissions()
-}
-```
-
-**Example Command Flow:**
-
-```
-/user PlayerName
-  └─ OldUserGroupCommand.onCommand()
-     └─ cmd.setCalculable(USER, uuid, sender)
-
-/user addgroup admin
-  └─ OldUserGroupCommand.onCommand()
-     └─ Commands.addGroup("admin", sender)
-        └─ ActionExecutor.execute(uuid, USER, "addgroup", "admin", world)
-           └─ User.addGroup("admin")
-              ├─ CalculableChange event fired
-              ├─ Auto-save triggered
-              └─ Player permissions updated
-```
+- Stores per-player context: selected world, calculable type (USER/GROUP), object name
+- Supports command chaining (e.g., `/user PlayerName` then `/user addgroup admin`)
+- Flow: Command → ActionExecutor → API modification → CalculableChange event → auto-save → player permissions updated
 
 #### Promotion Track System
 
@@ -759,21 +396,8 @@ vip:
   - vipdiamond
 ```
 
-**Promotion Flow:**
-
-```
-/promote PlayerName default
-  ├─ Check permission: "tracks.default"
-  ├─ Get PromotionTrack implementation
-  └─ track.promote("PlayerName", "default", "world")
-     │
-     └─ ReplaceGroupPromotion example:
-        ├─ Get track groups: [default, moderator, admin]
-        ├─ Find user's current position
-        ├─ Remove current group
-        ├─ Add next group
-        └─ Save world
-```
+**Promotion Flow** (see `PromotionTrack.java` implementations):
+- Check permission → get PromotionTrack implementation → promote/demote user → save world
 
 #### World Mirroring
 
@@ -785,18 +409,7 @@ world_end: world
 economy_world: main_world
 ```
 
-**Purpose:** Multiple worlds share the same permission files
-
-**Implementation:**
-
-```java
-// When world loads
-String worldName = "world_nether";
-if (mirrors.containsKey(worldName)) {
-    worldName = mirrors.get(worldName);  // Use "world" instead
-}
-// world_nether and world share users.yml and groups.yml
-```
+**Purpose:** Multiple worlds share the same permission files (e.g., world_nether and world share users.yml and groups.yml)
 
 #### Custom Nodes
 
@@ -814,19 +427,10 @@ permissions:
     - moderator.ban: true
 ```
 
-**Purpose:** Define permission hierarchies that expand automatically
-
-**Registration:**
-
-```java
-CustomNodes.load()
-  ├─ For each custom node:
-  │  ├─ Create Bukkit Permission with children
-  │  ├─ Register with PluginManager
-  │  └─ Load into core API
-  └─ When player has "admin.panel":
-     └─ Automatically gets all child permissions
-```
+**Purpose:** Define permission hierarchies that expand automatically (see `CustomNodes.java`)
+- Creates Bukkit Permission objects with children nodes
+- Registers with PluginManager and core API
+- When player has parent permission, automatically gets all child permissions
 
 #### Legacy Import System
 
@@ -866,18 +470,8 @@ The Sponge module is an incomplete alpha implementation for the Sponge platform.
 ### Setup
 
 ```bash
-# Clone the repository
-git clone https://github.com/jmurth1234/bPermissions.git
-cd bPermissions
-
-# Build the project
-./gradlew build
-
-# Run tests
-./gradlew test
-
-# Generate coverage reports
-./gradlew jacocoTestReport
+git clone https://github.com/jmurth1234/bPermissions.git && cd bPermissions
+./gradlew build test jacocoTestReport  # Build, test, and generate coverage
 ```
 
 ### IDE Configuration
@@ -1099,21 +693,10 @@ Follow **Semantic Versioning** (`MAJOR.MINOR.PATCH`):
 
 #### Method 1: Git Tag (Recommended)
 
-```bash
-# 1. Update version in build.gradle
-vim build.gradle  # Change baseVersion = '2.14.0'
-
-# 2. Commit the version bump
-git add build.gradle
-git commit -m "chore: Bump version to 2.14.0"
-git push origin master
-
-# 3. Create and push tag
-git tag v2.14.0
-git push origin v2.14.0
-
-# 4. Monitor release in GitHub Actions
-```
+1. Update `baseVersion` in `build.gradle` to new version (e.g., `2.14.0`)
+2. Commit and push: `git add build.gradle && git commit -m "chore: Bump version to 2.14.0" && git push`
+3. Create and push tag: `git tag v2.14.0 && git push origin v2.14.0`
+4. Monitor release in GitHub Actions
 
 #### Method 2: Manual Workflow Dispatch
 
@@ -1239,20 +822,10 @@ open build/reports/spotbugs/main.html
 
 ### 9. Git Workflow for Feature Development
 
-```bash
-# Create feature branch
-git checkout -b feature/my-feature
-
-# Make changes and commit
-git add .
-git commit -m "feat: Add new feature description"
-
-# Push to remote
-git push origin feature/my-feature
-
-# Create Pull Request on GitHub
-# After approval, squash and merge to master
-```
+1. Create feature branch: `git checkout -b feature/my-feature`
+2. Make changes and commit: `git add . && git commit -m "feat: Add new feature description"`
+3. Push: `git push origin feature/my-feature`
+4. Create Pull Request on GitHub → squash and merge to master after approval
 
 ### 10. Debugging Permission Issues
 
