@@ -59,6 +59,41 @@ See the [Command Reference](https://dev.bukkit.org/projects/bpermissions/pages/b
 
 bPermissions provides a Java API for developers to integrate with other plugins. See the [API Documentation](https://dev.bukkit.org/projects/bpermissions/pages/bpermissions-api) for usage details.
 
+## Testing
+
+bPermissions includes comprehensive unit tests with code coverage tracking to ensure quality and reliability.
+
+### Test Framework
+
+- **JUnit 5** (Jupiter) - Modern testing framework
+- **Mockito** - Mocking library for unit tests
+- **JaCoCo** - Code coverage analysis
+
+### Running Tests
+
+Run all tests in the project:
+
+```bash
+./gradlew test
+```
+
+Run tests for a specific module:
+
+```bash
+./gradlew :core:test
+./gradlew :bukkit:test
+```
+
+### Coverage Reports
+
+Generate a JaCoCo coverage report:
+
+```bash
+./gradlew jacocoTestReport
+```
+
+Coverage reports are generated in `{module}/build/reports/jacoco/test/html/`. Open the `index.html` file in your browser to view the detailed coverage report.
+
 ## Support
 
 If you encounter any issues or have questions, please open an issue on the [issue tracker](https://github.com/jmurth1234/bPermissions/issues).
