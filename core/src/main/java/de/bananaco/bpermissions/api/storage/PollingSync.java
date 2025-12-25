@@ -12,6 +12,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -34,7 +35,7 @@ public class PollingSync {
     private final ScheduledExecutorService scheduler;
 
     private long lastPollTimestamp;
-    private volatile boolean running = false;
+    private final AtomicBoolean running = new AtomicBoolean(false);
 
     /**
      * Create a new PollingSync instance.
@@ -57,14 +58,18 @@ public class PollingSync {
      * This method schedules periodic polls at the configured interval.
      * If already running, this method does nothing.
      * </p>
+     * <p>
+     * Thread-safe: Uses atomic compare-and-set to prevent race conditions
+     * when multiple threads attempt to start polling simultaneously.
+     * </p>
      */
     public void start() {
-        if (running) {
+        // Atomically check if not running and set to running
+        if (!running.compareAndSet(false, true)) {
             Debugger.log("[PollingSync] Already running for world: " + world.getName());
             return;
         }
 
-        running = true;
         scheduler.scheduleAtFixedRate(
                 this::pollForChanges,
                 pollIntervalSeconds,  // Initial delay
@@ -78,13 +83,17 @@ public class PollingSync {
 
     /**
      * Stop polling for changes and shutdown the scheduler.
+     * <p>
+     * Thread-safe: Uses atomic compare-and-set to prevent race conditions
+     * when multiple threads attempt to stop polling simultaneously.
+     * </p>
      */
     public void stop() {
-        if (!running) {
+        // Atomically check if running and set to not running
+        if (!running.compareAndSet(true, false)) {
             return;
         }
 
-        running = false;
         scheduler.shutdown();
 
         try {
@@ -105,7 +114,7 @@ public class PollingSync {
      * @return true if running, false otherwise
      */
     public boolean isRunning() {
-        return running;
+        return running.get();
     }
 
     /**

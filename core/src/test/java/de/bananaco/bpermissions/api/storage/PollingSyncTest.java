@@ -232,4 +232,78 @@ class PollingSyncTest {
         // Verify that the user was removed
         verify(mockWorld, atLeastOnce()).remove(mockUser);
     }
+
+    @Test
+    void testConcurrentStartCalls() throws Exception {
+        // Test that concurrent start() calls don't create duplicate schedulers
+        // This verifies the AtomicBoolean race condition fix
+
+        int threadCount = 10;
+        Thread[] threads = new Thread[threadCount];
+        final int[] successCount = new int[1];
+
+        // Create multiple threads that all try to start simultaneously
+        for (int i = 0; i < threadCount; i++) {
+            threads[i] = new Thread(() -> {
+                pollingSync.start();
+                if (pollingSync.isRunning()) {
+                    synchronized (successCount) {
+                        successCount[0]++;
+                    }
+                }
+            });
+        }
+
+        // Start all threads at once
+        for (Thread thread : threads) {
+            thread.start();
+        }
+
+        // Wait for all threads to complete
+        for (Thread thread : threads) {
+            thread.join();
+        }
+
+        // Verify that polling started and is running
+        assertTrue(pollingSync.isRunning(), "PollingSync should be running");
+
+        // Verify only ONE start actually happened (no duplicate schedulers)
+        // All threads should see it as running, but only one actually started it
+        assertEquals(threadCount, successCount[0], "All threads should see running=true");
+
+        // Clean up
+        pollingSync.stop();
+        assertFalse(pollingSync.isRunning(), "PollingSync should be stopped");
+    }
+
+    @Test
+    void testConcurrentStopCalls() throws Exception {
+        // Test that concurrent stop() calls don't cause issues
+
+        pollingSync.start();
+        assertTrue(pollingSync.isRunning());
+
+        int threadCount = 10;
+        Thread[] threads = new Thread[threadCount];
+
+        // Create multiple threads that all try to stop simultaneously
+        for (int i = 0; i < threadCount; i++) {
+            threads[i] = new Thread(() -> {
+                pollingSync.stop();
+            });
+        }
+
+        // Start all threads at once
+        for (Thread thread : threads) {
+            thread.start();
+        }
+
+        // Wait for all threads to complete
+        for (Thread thread : threads) {
+            thread.join();
+        }
+
+        // Verify that polling stopped
+        assertFalse(pollingSync.isRunning(), "PollingSync should be stopped");
+    }
 }

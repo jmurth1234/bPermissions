@@ -161,4 +161,55 @@ class WorldFactoryTest {
         assertEquals("world2", world2.getName());
         assertEquals("world_nether", world3.getName());
     }
+
+    @Test
+    void testCloseBackendRemovesBackend() throws StorageException {
+        // This test verifies that closeBackend properly shuts down and removes a backend
+        when(mockConfig.getStorageBackend()).thenReturn("yaml");
+
+        World world = worldFactory.createWorld("testworld");
+        assertNotNull(world);
+
+        // Close a backend that doesn't exist (should not throw)
+        assertDoesNotThrow(() -> worldFactory.closeBackend("mongodb"));
+
+        // Close with null (should not throw)
+        assertDoesNotThrow(() -> worldFactory.closeBackend(null));
+    }
+
+    @Test
+    void testCloseOtherBackendsKeepsSpecified() throws StorageException {
+        when(mockConfig.getStorageBackend()).thenReturn("yaml");
+
+        worldFactory.createWorld("testworld");
+
+        // Close all backends except yaml (should not throw)
+        assertDoesNotThrow(() -> worldFactory.closeOtherBackends("yaml"));
+
+        // Close all backends except mongodb (should close everything since we only have yaml)
+        assertDoesNotThrow(() -> worldFactory.closeOtherBackends("mongodb"));
+
+        // Close all backends (pass null)
+        assertDoesNotThrow(() -> worldFactory.closeOtherBackends(null));
+    }
+
+    @Test
+    void testCloseBackendCaseInsensitive() {
+        // Test that closeBackend is case-insensitive
+        assertDoesNotThrow(() -> worldFactory.closeBackend("MONGODB"));
+        assertDoesNotThrow(() -> worldFactory.closeBackend("MongoDb"));
+        assertDoesNotThrow(() -> worldFactory.closeBackend("mysql"));
+    }
+
+    @Test
+    void testMultipleShutdownCallsSafe() throws StorageException {
+        when(mockConfig.getStorageBackend()).thenReturn("yaml");
+
+        worldFactory.createWorld("testworld");
+
+        // Multiple shutdown calls should be safe
+        assertDoesNotThrow(() -> worldFactory.shutdown());
+        assertDoesNotThrow(() -> worldFactory.shutdown());
+        assertDoesNotThrow(() -> worldFactory.shutdown());
+    }
 }

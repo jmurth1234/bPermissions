@@ -117,12 +117,26 @@ public class MySQLBackend implements StorageBackend {
 
     /**
      * Create database tables if they don't exist.
+     * <p>
+     * Each table is created in a separate method with isolated error handling
+     * to prevent connection leaks if one table creation fails.
+     * </p>
      */
     private void createTables() throws SQLException {
-        try (Connection conn = dataSource.getConnection();
-             Statement stmt = conn.createStatement()) {
+        try (Connection conn = dataSource.getConnection()) {
+            createUsersTable(conn);
+            createGroupsTable(conn);
+            createWorldsTable(conn);
+            createChangelogTable(conn);
+            Debugger.log("[MySQLBackend] Created/verified all database tables");
+        }
+    }
 
-            // Users table
+    /**
+     * Create the permissions_users table.
+     */
+    private void createUsersTable(Connection conn) throws SQLException {
+        try (Statement stmt = conn.createStatement()) {
             stmt.executeUpdate(
                     "CREATE TABLE IF NOT EXISTS permissions_users (" +
                             "id VARCHAR(100) PRIMARY KEY, " +
@@ -137,8 +151,15 @@ public class MySQLBackend implements StorageBackend {
                             "INDEX idx_last_modified (last_modified)" +
                             ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
             );
+            Debugger.log("[MySQLBackend] Created/verified permissions_users table");
+        }
+    }
 
-            // Groups table
+    /**
+     * Create the permissions_groups table.
+     */
+    private void createGroupsTable(Connection conn) throws SQLException {
+        try (Statement stmt = conn.createStatement()) {
             stmt.executeUpdate(
                     "CREATE TABLE IF NOT EXISTS permissions_groups (" +
                             "id VARCHAR(100) PRIMARY KEY, " +
@@ -152,8 +173,15 @@ public class MySQLBackend implements StorageBackend {
                             "INDEX idx_last_modified (last_modified)" +
                             ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
             );
+            Debugger.log("[MySQLBackend] Created/verified permissions_groups table");
+        }
+    }
 
-            // Worlds table
+    /**
+     * Create the permissions_worlds table.
+     */
+    private void createWorldsTable(Connection conn) throws SQLException {
+        try (Statement stmt = conn.createStatement()) {
             stmt.executeUpdate(
                     "CREATE TABLE IF NOT EXISTS permissions_worlds (" +
                             "world VARCHAR(50) PRIMARY KEY, " +
@@ -162,8 +190,15 @@ public class MySQLBackend implements StorageBackend {
                             "custom_settings TEXT" +
                             ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
             );
+            Debugger.log("[MySQLBackend] Created/verified permissions_worlds table");
+        }
+    }
 
-            // Changelog table
+    /**
+     * Create the permissions_changelog table.
+     */
+    private void createChangelogTable(Connection conn) throws SQLException {
+        try (Statement stmt = conn.createStatement()) {
             stmt.executeUpdate(
                     "CREATE TABLE IF NOT EXISTS permissions_changelog (" +
                             "id INT AUTO_INCREMENT PRIMARY KEY, " +
@@ -177,8 +212,7 @@ public class MySQLBackend implements StorageBackend {
                             "INDEX idx_timestamp (timestamp)" +
                             ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
             );
-
-            Debugger.log("[MySQLBackend] Created/verified database tables");
+            Debugger.log("[MySQLBackend] Created/verified permissions_changelog table");
         }
     }
 

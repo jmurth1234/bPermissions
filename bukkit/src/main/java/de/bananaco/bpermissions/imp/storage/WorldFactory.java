@@ -109,6 +109,53 @@ public class WorldFactory {
     }
 
     /**
+     * Close and remove a specific storage backend.
+     * <p>
+     * This method shuts down a backend and removes it from the shared backends map.
+     * Useful when switching storage backends or reloading configuration.
+     * </p>
+     *
+     * @param backendType The backend type to close ("mongodb", "mysql", etc.)
+     */
+    public void closeBackend(String backendType) {
+        if (backendType == null) {
+            return;
+        }
+
+        StorageBackend backend = sharedBackends.remove(backendType.toLowerCase());
+        if (backend != null) {
+            try {
+                Debugger.log("[WorldFactory] Closing " + backendType + " backend");
+                backend.shutdown();
+            } catch (StorageException e) {
+                Debugger.log("[WorldFactory] Error closing " + backendType + " backend: " + e.getMessage());
+            }
+        }
+    }
+
+    /**
+     * Close all backends except the specified one.
+     * <p>
+     * This is useful when switching storage backends - it closes the old backends
+     * while keeping the current one active.
+     * </p>
+     *
+     * @param exceptBackend The backend type to keep (null to close all)
+     */
+    public void closeOtherBackends(String exceptBackend) {
+        String keepBackend = exceptBackend != null ? exceptBackend.toLowerCase() : null;
+
+        // Create a copy of keys to avoid ConcurrentModificationException
+        String[] backends = sharedBackends.keySet().toArray(new String[0]);
+
+        for (String backendType : backends) {
+            if (!backendType.equals(keepBackend)) {
+                closeBackend(backendType);
+            }
+        }
+    }
+
+    /**
      * Shutdown all shared storage backends.
      * <p>
      * This should be called when the plugin is disabled to properly close
