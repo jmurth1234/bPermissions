@@ -136,7 +136,7 @@ public class MongoBackend implements StorageBackend {
 
             // Changelog collection indexes
             changelogCollection.createIndex(Indexes.descending("timestamp"));
-            changelogCollection.createIndex(Indexes.compound(Indexes.ascending("world"), Indexes.descending("timestamp")));
+            changelogCollection.createIndex(new Document("world", 1).append("timestamp", -1));
 
             Debugger.log("[MongoBackend] Created indexes");
         } catch (Exception e) {
@@ -488,7 +488,7 @@ public class MongoBackend implements StorageBackend {
         }
     }
 
-    // ========== Conversion Methods: Document ↔ DTO ==========
+    // ========== Conversion Methods: Document <-> DTO ==========
 
     private UserData documentToUserData(Document doc) {
         String uuid = doc.getString("uuid");

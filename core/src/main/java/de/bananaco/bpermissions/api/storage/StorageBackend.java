@@ -223,7 +223,7 @@ public interface StorageBackend {
      * </p>
      *
      * @param worldName The world name
-     * @return Map of UUID → UserData
+     * @return Map of UUID to UserData
      * @throws StorageException if the load operation fails
      */
     Map<String, UserData> loadAllUsers(String worldName) throws StorageException;
@@ -232,7 +232,7 @@ public interface StorageBackend {
      * Load all groups for a world in a single operation.
      *
      * @param worldName The world name
-     * @return Map of group name → GroupData
+     * @return Map of group name to GroupData
      * @throws StorageException if the load operation fails
      */
     Map<String, GroupData> loadAllGroups(String worldName) throws StorageException;
