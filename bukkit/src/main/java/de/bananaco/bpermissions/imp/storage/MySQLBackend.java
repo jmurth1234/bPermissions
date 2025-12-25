@@ -38,6 +38,15 @@ public class MySQLBackend implements StorageBackend {
     private final Gson gson = new Gson();
     private String serverId;
 
+    // Connection configuration (stored for reconnection)
+    private String host;
+    private int port;
+    private String database;
+    private String username;
+    private String password;
+    private int maxReconnectAttempts = 3;
+    private long reconnectDelayMs = 5000; // 5 seconds
+
     // Type tokens for Gson deserialization
     private static final Type LIST_STRING_TYPE = new TypeToken<List<String>>() {}.getType();
     private static final Type MAP_STRING_STRING_TYPE = new TypeToken<Map<String, String>>() {}.getType();
@@ -46,13 +55,21 @@ public class MySQLBackend implements StorageBackend {
     @Override
     public void initialize(Map<String, Object> config) throws StorageException {
         try {
-            // Extract configuration
-            String host = (String) config.get("host");
-            int port = (Integer) config.getOrDefault("port", 3306);
-            String database = (String) config.get("database");
-            String username = (String) config.get("username");
-            String password = (String) config.get("password");
+            // Extract and store configuration for reconnection
+            this.host = (String) config.get("host");
+            this.port = (Integer) config.getOrDefault("port", 3306);
+            this.database = (String) config.get("database");
+            this.username = (String) config.get("username");
+            this.password = (String) config.get("password");
             this.serverId = (String) config.getOrDefault("server-id", UUID.randomUUID().toString());
+
+            // Optional reconnection configuration
+            if (config.containsKey("max-reconnect-attempts")) {
+                this.maxReconnectAttempts = (Integer) config.get("max-reconnect-attempts");
+            }
+            if (config.containsKey("reconnect-delay-ms")) {
+                this.reconnectDelayMs = ((Number) config.get("reconnect-delay-ms")).longValue();
+            }
 
             if (host == null || database == null || username == null || password == null) {
                 throw new StorageException("MySQL configuration incomplete. Required: host, database, username, password");
@@ -60,24 +77,8 @@ public class MySQLBackend implements StorageBackend {
 
             Debugger.log("[MySQLBackend] Initializing with database: " + database + ", server-id: " + serverId);
 
-            // Configure HikariCP connection pool
-            HikariConfig hikariConfig = new HikariConfig();
-            hikariConfig.setJdbcUrl(String.format("jdbc:mysql://%s:%d/%s?useSSL=false&serverTimezone=UTC", host, port, database));
-            hikariConfig.setUsername(username);
-            hikariConfig.setPassword(password);
-            hikariConfig.setMaximumPoolSize(20);  // Max connections for 6+ servers
-            hikariConfig.setMinimumIdle(5);       // Min idle connections
-            hikariConfig.setConnectionTimeout(10000);
-            hikariConfig.setIdleTimeout(600000);  // 10 minutes
-            hikariConfig.setMaxLifetime(1800000); // 30 minutes
-
-            // Performance optimizations
-            hikariConfig.addDataSourceProperty("cachePrepStmts", "true");
-            hikariConfig.addDataSourceProperty("prepStmtCacheSize", "250");
-            hikariConfig.addDataSourceProperty("prepStmtCacheSqlLimit", "2048");
-            hikariConfig.addDataSourceProperty("useServerPrepStmts", "true");
-
-            dataSource = new HikariDataSource(hikariConfig);
+            // Create HikariCP data source
+            dataSource = new HikariDataSource(createHikariConfig());
 
             // Create tables if they don't exist
             createTables();
@@ -87,6 +88,148 @@ public class MySQLBackend implements StorageBackend {
         } catch (Exception e) {
             throw new StorageException.ConnectionFailedException("Failed to initialize MySQL backend", e);
         }
+    }
+
+    /**
+     * Create HikariCP configuration for MySQL connection pool.
+     * <p>
+     * This method is extracted to allow reuse during reconnection.
+     * </p>
+     *
+     * @return Configured HikariConfig instance
+     */
+    private HikariConfig createHikariConfig() {
+        HikariConfig hikariConfig = new HikariConfig();
+        hikariConfig.setJdbcUrl(String.format("jdbc:mysql://%s:%d/%s?useSSL=false&serverTimezone=UTC",
+                host, port, database));
+        hikariConfig.setUsername(username);
+        hikariConfig.setPassword(password);
+        hikariConfig.setMaximumPoolSize(20);  // Max connections for 6+ servers
+        hikariConfig.setMinimumIdle(5);       // Min idle connections
+        hikariConfig.setConnectionTimeout(10000);
+        hikariConfig.setIdleTimeout(600000);  // 10 minutes
+        hikariConfig.setMaxLifetime(1800000); // 30 minutes
+
+        // Performance optimizations
+        hikariConfig.addDataSourceProperty("cachePrepStmts", "true");
+        hikariConfig.addDataSourceProperty("prepStmtCacheSize", "250");
+        hikariConfig.addDataSourceProperty("prepStmtCacheSqlLimit", "2048");
+        hikariConfig.addDataSourceProperty("useServerPrepStmts", "true");
+
+        return hikariConfig;
+    }
+
+    /**
+     * Attempt to reconnect to the database.
+     * <p>
+     * This method closes the existing data source and creates a new one.
+     * Used for automatic recovery when database connection is lost.
+     * </p>
+     *
+     * @return true if reconnection succeeded, false otherwise
+     */
+    private synchronized boolean reconnect() {
+        try {
+            Debugger.log("[MySQLBackend] Attempting to reconnect to database...");
+
+            // Close old data source
+            if (dataSource != null && !dataSource.isClosed()) {
+                try {
+                    dataSource.close();
+                } catch (Exception e) {
+                    Debugger.log("[MySQLBackend] Error closing old data source: " + e.getMessage());
+                }
+            }
+
+            // Wait before reconnecting to avoid connection storms
+            Thread.sleep(reconnectDelayMs);
+
+            // Create new data source
+            dataSource = new HikariDataSource(createHikariConfig());
+
+            // Verify connection
+            try (Connection conn = dataSource.getConnection()) {
+                if (conn.isValid(2)) {
+                    Debugger.log("[MySQLBackend] Successfully reconnected to database");
+                    return true;
+                }
+            }
+
+            return false;
+
+        } catch (Exception e) {
+            Debugger.log("[MySQLBackend] Reconnection failed: " + e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Check if a SQLException is a connection-related error that should trigger reconnection.
+     * <p>
+     * Connection errors typically have SQL state codes starting with '08'.
+     * See: https://dev.mysql.com/doc/connector-j/8.0/en/connector-j-reference-error-sqlstates.html
+     * </p>
+     *
+     * @param e The SQLException to check
+     * @return true if this is a connection error, false otherwise
+     */
+    private boolean shouldRetryOnError(SQLException e) {
+        String sqlState = e.getSQLState();
+        if (sqlState == null) {
+            return false;
+        }
+
+        // SQL state 08xxx indicates connection exceptions
+        // 08000: connection_exception
+        // 08001: SQL client unable to establish SQL connection
+        // 08003: connection does not exist
+        // 08004: SQL server rejected establishment of SQL connection
+        // 08006: connection failure
+        // 08007: transaction resolution unknown
+        return sqlState.startsWith("08");
+    }
+
+    /**
+     * Execute a database operation with automatic retry on connection failure.
+     * <p>
+     * This method wraps database operations and automatically retries once
+     * after attempting to reconnect if a connection error is detected.
+     * </p>
+     *
+     * @param operation The database operation to execute
+     * @param <T> The return type of the operation
+     * @return The result of the operation
+     * @throws StorageException if the operation fails (even after retry)
+     */
+    private <T> T executeWithRetry(DatabaseOperation<T> operation) throws StorageException {
+        for (int attempt = 0; attempt <= 1; attempt++) {
+            try {
+                return operation.execute();
+            } catch (SQLException e) {
+                // Only retry on first attempt and if it's a connection error
+                if (attempt == 0 && shouldRetryOnError(e)) {
+                    Debugger.log("[MySQLBackend] Connection error detected, attempting reconnection...");
+                    if (reconnect()) {
+                        Debugger.log("[MySQLBackend] Reconnected, retrying operation...");
+                        continue; // Retry the operation
+                    } else {
+                        Debugger.log("[MySQLBackend] Reconnection failed");
+                    }
+                }
+                // Either not a connection error, or retry failed
+                throw new StorageException.ConnectionFailedException("Database operation failed", e);
+            }
+        }
+        // Should never reach here, but satisfy compiler
+        throw new StorageException("Database operation failed after retry");
+    }
+
+    /**
+     * Functional interface for database operations that can be retried.
+     */
+    @FunctionalInterface
+    private interface DatabaseOperation<T> {
+        T execute() throws SQLException;
     }
 
     @Override
@@ -220,394 +363,388 @@ public class MySQLBackend implements StorageBackend {
 
     @Override
     public UserData loadUser(String uuid, String worldName) throws StorageException {
-        String sql = "SELECT * FROM permissions_users WHERE uuid = ? AND world = ?";
+        return executeWithRetry(() -> {
+            String sql = "SELECT * FROM permissions_users WHERE uuid = ? AND world = ?";
 
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            try (Connection conn = dataSource.getConnection();
+                 PreparedStatement stmt = conn.prepareStatement(sql)) {
 
-            stmt.setString(1, uuid);
-            stmt.setString(2, worldName);
+                stmt.setString(1, uuid);
+                stmt.setString(2, worldName);
 
-            ResultSet rs = stmt.executeQuery();
-            if (!rs.next()) {
-                return null;
+                ResultSet rs = stmt.executeQuery();
+                if (!rs.next()) {
+                    return null;
+                }
+
+                return resultSetToUserData(rs);
             }
-
-            return resultSetToUserData(rs);
-
-        } catch (SQLException e) {
-            throw new StorageException("Failed to load user " + uuid + " in world " + worldName, e);
-        }
+        });
     }
 
     @Override
     public void saveUser(UserData userData, String worldName) throws StorageException {
         userData.setLastModified(System.currentTimeMillis());
 
-        String sql = "INSERT INTO permissions_users (id, uuid, username, world, permissions, groups, metadata, last_modified) " +
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?) " +
-                "ON DUPLICATE KEY UPDATE " +
-                "username = VALUES(username), " +
-                "permissions = VALUES(permissions), " +
-                "groups = VALUES(groups), " +
-                "metadata = VALUES(metadata), " +
-                "last_modified = VALUES(last_modified)";
+        executeWithRetry(() -> {
+            String sql = "INSERT INTO permissions_users (id, uuid, username, world, permissions, groups, metadata, last_modified) " +
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?) " +
+                    "ON DUPLICATE KEY UPDATE " +
+                    "username = VALUES(username), " +
+                    "permissions = VALUES(permissions), " +
+                    "groups = VALUES(groups), " +
+                    "metadata = VALUES(metadata), " +
+                    "last_modified = VALUES(last_modified)";
 
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            try (Connection conn = dataSource.getConnection();
+                 PreparedStatement stmt = conn.prepareStatement(sql)) {
 
-            String id = buildUserId(userData.getUuid(), worldName);
-            stmt.setString(1, id);
-            stmt.setString(2, userData.getUuid());
-            stmt.setString(3, userData.getUsername());
-            stmt.setString(4, worldName);
-            stmt.setString(5, gson.toJson(new ArrayList<>(userData.getPermissions())));
-            stmt.setString(6, gson.toJson(new ArrayList<>(userData.getGroups())));
-            stmt.setString(7, gson.toJson(userData.getMetadata()));
-            stmt.setLong(8, userData.getLastModified());
+                String id = buildUserId(userData.getUuid(), worldName);
+                stmt.setString(1, id);
+                stmt.setString(2, userData.getUuid());
+                stmt.setString(3, userData.getUsername());
+                stmt.setString(4, worldName);
+                stmt.setString(5, gson.toJson(new ArrayList<>(userData.getPermissions())));
+                stmt.setString(6, gson.toJson(new ArrayList<>(userData.getGroups())));
+                stmt.setString(7, gson.toJson(userData.getMetadata()));
+                stmt.setLong(8, userData.getLastModified());
 
-            stmt.executeUpdate();
+                stmt.executeUpdate();
 
-            // Log change
-            logChange(worldName, CalculableType.USER, userData.getUuid(), ChangeRecord.ChangeType.UPDATE);
+                // Log change
+                logChange(worldName, CalculableType.USER, userData.getUuid(), ChangeRecord.ChangeType.UPDATE);
 
-            Debugger.log("[MySQLBackend] Saved user " + userData.getUuid() + " in world " + worldName);
+                Debugger.log("[MySQLBackend] Saved user " + userData.getUuid() + " in world " + worldName);
 
-        } catch (SQLException e) {
-            throw new StorageException("Failed to save user " + userData.getUuid() + " in world " + worldName, e);
-        }
+                return null; // Void operation
+            }
+        });
     }
 
     @Override
     public boolean userExists(String uuid, String worldName) throws StorageException {
-        String sql = "SELECT COUNT(*) FROM permissions_users WHERE uuid = ? AND world = ?";
+        return executeWithRetry(() -> {
+            String sql = "SELECT COUNT(*) FROM permissions_users WHERE uuid = ? AND world = ?";
 
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            try (Connection conn = dataSource.getConnection();
+                 PreparedStatement stmt = conn.prepareStatement(sql)) {
 
-            stmt.setString(1, uuid);
-            stmt.setString(2, worldName);
+                stmt.setString(1, uuid);
+                stmt.setString(2, worldName);
 
-            ResultSet rs = stmt.executeQuery();
-            return rs.next() && rs.getInt(1) > 0;
-
-        } catch (SQLException e) {
-            throw new StorageException("Failed to check if user exists: " + uuid, e);
-        }
+                ResultSet rs = stmt.executeQuery();
+                return rs.next() && rs.getInt(1) > 0;
+            }
+        });
     }
 
     @Override
     public Set<String> getAllUserIds(String worldName) throws StorageException {
-        String sql = "SELECT uuid FROM permissions_users WHERE world = ?";
-        Set<String> uuids = new HashSet<>();
+        return executeWithRetry(() -> {
+            String sql = "SELECT uuid FROM permissions_users WHERE world = ?";
+            Set<String> uuids = new HashSet<>();
 
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            try (Connection conn = dataSource.getConnection();
+                 PreparedStatement stmt = conn.prepareStatement(sql)) {
 
-            stmt.setString(1, worldName);
-            ResultSet rs = stmt.executeQuery();
+                stmt.setString(1, worldName);
+                ResultSet rs = stmt.executeQuery();
 
-            while (rs.next()) {
-                uuids.add(rs.getString("uuid"));
+                while (rs.next()) {
+                    uuids.add(rs.getString("uuid"));
+                }
+
+                return uuids;
             }
-
-            return uuids;
-
-        } catch (SQLException e) {
-            throw new StorageException("Failed to get all user IDs for world " + worldName, e);
-        }
+        });
     }
 
     @Override
     public void deleteUser(String uuid, String worldName) throws StorageException {
-        String sql = "DELETE FROM permissions_users WHERE uuid = ? AND world = ?";
+        executeWithRetry(() -> {
+            String sql = "DELETE FROM permissions_users WHERE uuid = ? AND world = ?";
 
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            try (Connection conn = dataSource.getConnection();
+                 PreparedStatement stmt = conn.prepareStatement(sql)) {
 
-            stmt.setString(1, uuid);
-            stmt.setString(2, worldName);
-            stmt.executeUpdate();
+                stmt.setString(1, uuid);
+                stmt.setString(2, worldName);
+                stmt.executeUpdate();
 
-            // Log change
-            logChange(worldName, CalculableType.USER, uuid, ChangeRecord.ChangeType.DELETE);
+                // Log change
+                logChange(worldName, CalculableType.USER, uuid, ChangeRecord.ChangeType.DELETE);
 
-            Debugger.log("[MySQLBackend] Deleted user " + uuid + " from world " + worldName);
+                Debugger.log("[MySQLBackend] Deleted user " + uuid + " from world " + worldName);
 
-        } catch (SQLException e) {
-            throw new StorageException("Failed to delete user " + uuid + " from world " + worldName, e);
-        }
+                return null; // Void operation
+            }
+        });
     }
 
     // ========== Group Operations ==========
 
     @Override
     public GroupData loadGroup(String groupName, String worldName) throws StorageException {
-        String sql = "SELECT * FROM permissions_groups WHERE name = ? AND world = ?";
+        return executeWithRetry(() -> {
+            String sql = "SELECT * FROM permissions_groups WHERE name = ? AND world = ?";
 
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            try (Connection conn = dataSource.getConnection();
+                 PreparedStatement stmt = conn.prepareStatement(sql)) {
 
-            stmt.setString(1, groupName);
-            stmt.setString(2, worldName);
+                stmt.setString(1, groupName);
+                stmt.setString(2, worldName);
 
-            ResultSet rs = stmt.executeQuery();
-            if (!rs.next()) {
-                return null;
+                ResultSet rs = stmt.executeQuery();
+                if (!rs.next()) {
+                    return null;
+                }
+
+                return resultSetToGroupData(rs);
             }
-
-            return resultSetToGroupData(rs);
-
-        } catch (SQLException e) {
-            throw new StorageException("Failed to load group " + groupName + " in world " + worldName, e);
-        }
+        });
     }
 
     @Override
     public void saveGroup(GroupData groupData, String worldName) throws StorageException {
         groupData.setLastModified(System.currentTimeMillis());
 
-        String sql = "INSERT INTO permissions_groups (id, name, world, permissions, groups, metadata, last_modified) " +
-                "VALUES (?, ?, ?, ?, ?, ?, ?) " +
-                "ON DUPLICATE KEY UPDATE " +
-                "permissions = VALUES(permissions), " +
-                "groups = VALUES(groups), " +
-                "metadata = VALUES(metadata), " +
-                "last_modified = VALUES(last_modified)";
+        executeWithRetry(() -> {
+            String sql = "INSERT INTO permissions_groups (id, name, world, permissions, groups, metadata, last_modified) " +
+                    "VALUES (?, ?, ?, ?, ?, ?, ?) " +
+                    "ON DUPLICATE KEY UPDATE " +
+                    "permissions = VALUES(permissions), " +
+                    "groups = VALUES(groups), " +
+                    "metadata = VALUES(metadata), " +
+                    "last_modified = VALUES(last_modified)";
 
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            try (Connection conn = dataSource.getConnection();
+                 PreparedStatement stmt = conn.prepareStatement(sql)) {
 
-            String id = buildGroupId(groupData.getName(), worldName);
-            stmt.setString(1, id);
-            stmt.setString(2, groupData.getName());
-            stmt.setString(3, worldName);
-            stmt.setString(4, gson.toJson(new ArrayList<>(groupData.getPermissions())));
-            stmt.setString(5, gson.toJson(new ArrayList<>(groupData.getGroups())));
-            stmt.setString(6, gson.toJson(groupData.getMetadata()));
-            stmt.setLong(7, groupData.getLastModified());
+                String id = buildGroupId(groupData.getName(), worldName);
+                stmt.setString(1, id);
+                stmt.setString(2, groupData.getName());
+                stmt.setString(3, worldName);
+                stmt.setString(4, gson.toJson(new ArrayList<>(groupData.getPermissions())));
+                stmt.setString(5, gson.toJson(new ArrayList<>(groupData.getGroups())));
+                stmt.setString(6, gson.toJson(groupData.getMetadata()));
+                stmt.setLong(7, groupData.getLastModified());
 
-            stmt.executeUpdate();
+                stmt.executeUpdate();
 
-            // Log change
-            logChange(worldName, CalculableType.GROUP, groupData.getName(), ChangeRecord.ChangeType.UPDATE);
+                // Log change
+                logChange(worldName, CalculableType.GROUP, groupData.getName(), ChangeRecord.ChangeType.UPDATE);
 
-            Debugger.log("[MySQLBackend] Saved group " + groupData.getName() + " in world " + worldName);
+                Debugger.log("[MySQLBackend] Saved group " + groupData.getName() + " in world " + worldName);
 
-        } catch (SQLException e) {
-            throw new StorageException("Failed to save group " + groupData.getName() + " in world " + worldName, e);
-        }
+                return null; // Void operation
+            }
+        });
     }
 
     @Override
     public boolean groupExists(String groupName, String worldName) throws StorageException {
-        String sql = "SELECT COUNT(*) FROM permissions_groups WHERE name = ? AND world = ?";
+        return executeWithRetry(() -> {
+            String sql = "SELECT COUNT(*) FROM permissions_groups WHERE name = ? AND world = ?";
 
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            try (Connection conn = dataSource.getConnection();
+                 PreparedStatement stmt = conn.prepareStatement(sql)) {
 
-            stmt.setString(1, groupName);
-            stmt.setString(2, worldName);
+                stmt.setString(1, groupName);
+                stmt.setString(2, worldName);
 
-            ResultSet rs = stmt.executeQuery();
-            return rs.next() && rs.getInt(1) > 0;
-
-        } catch (SQLException e) {
-            throw new StorageException("Failed to check if group exists: " + groupName, e);
-        }
+                ResultSet rs = stmt.executeQuery();
+                return rs.next() && rs.getInt(1) > 0;
+            }
+        });
     }
 
     @Override
     public Set<String> getAllGroupNames(String worldName) throws StorageException {
-        String sql = "SELECT name FROM permissions_groups WHERE world = ?";
-        Set<String> groupNames = new HashSet<>();
+        return executeWithRetry(() -> {
+            String sql = "SELECT name FROM permissions_groups WHERE world = ?";
+            Set<String> groupNames = new HashSet<>();
 
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            try (Connection conn = dataSource.getConnection();
+                 PreparedStatement stmt = conn.prepareStatement(sql)) {
 
-            stmt.setString(1, worldName);
-            ResultSet rs = stmt.executeQuery();
+                stmt.setString(1, worldName);
+                ResultSet rs = stmt.executeQuery();
 
-            while (rs.next()) {
-                groupNames.add(rs.getString("name"));
+                while (rs.next()) {
+                    groupNames.add(rs.getString("name"));
+                }
+
+                return groupNames;
             }
-
-            return groupNames;
-
-        } catch (SQLException e) {
-            throw new StorageException("Failed to get all group names for world " + worldName, e);
-        }
+        });
     }
 
     @Override
     public void deleteGroup(String groupName, String worldName) throws StorageException {
-        String sql = "DELETE FROM permissions_groups WHERE name = ? AND world = ?";
+        executeWithRetry(() -> {
+            String sql = "DELETE FROM permissions_groups WHERE name = ? AND world = ?";
 
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            try (Connection conn = dataSource.getConnection();
+                 PreparedStatement stmt = conn.prepareStatement(sql)) {
 
-            stmt.setString(1, groupName);
-            stmt.setString(2, worldName);
-            stmt.executeUpdate();
+                stmt.setString(1, groupName);
+                stmt.setString(2, worldName);
+                stmt.executeUpdate();
 
-            // Log change
-            logChange(worldName, CalculableType.GROUP, groupName, ChangeRecord.ChangeType.DELETE);
+                // Log change
+                logChange(worldName, CalculableType.GROUP, groupName, ChangeRecord.ChangeType.DELETE);
 
-            Debugger.log("[MySQLBackend] Deleted group " + groupName + " from world " + worldName);
+                Debugger.log("[MySQLBackend] Deleted group " + groupName + " from world " + worldName);
 
-        } catch (SQLException e) {
-            throw new StorageException("Failed to delete group " + groupName + " from world " + worldName, e);
-        }
+                return null; // Void operation
+            }
+        });
     }
 
     // ========== World Metadata Operations ==========
 
     @Override
     public WorldMetadata loadWorldMetadata(String worldName) throws StorageException {
-        String sql = "SELECT * FROM permissions_worlds WHERE world = ?";
+        return executeWithRetry(() -> {
+            String sql = "SELECT * FROM permissions_worlds WHERE world = ?";
 
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            try (Connection conn = dataSource.getConnection();
+                 PreparedStatement stmt = conn.prepareStatement(sql)) {
 
-            stmt.setString(1, worldName);
-            ResultSet rs = stmt.executeQuery();
+                stmt.setString(1, worldName);
+                ResultSet rs = stmt.executeQuery();
 
-            if (!rs.next()) {
-                return null;
+                if (!rs.next()) {
+                    return null;
+                }
+
+                return resultSetToWorldMetadata(rs);
             }
-
-            return resultSetToWorldMetadata(rs);
-
-        } catch (SQLException e) {
-            throw new StorageException("Failed to load world metadata for " + worldName, e);
-        }
+        });
     }
 
     @Override
     public void saveWorldMetadata(WorldMetadata metadata, String worldName) throws StorageException {
         metadata.setLastModified(System.currentTimeMillis());
 
-        String sql = "INSERT INTO permissions_worlds (world, default_group, last_modified, custom_settings) " +
-                "VALUES (?, ?, ?, ?) " +
-                "ON DUPLICATE KEY UPDATE " +
-                "default_group = VALUES(default_group), " +
-                "last_modified = VALUES(last_modified), " +
-                "custom_settings = VALUES(custom_settings)";
+        executeWithRetry(() -> {
+            String sql = "INSERT INTO permissions_worlds (world, default_group, last_modified, custom_settings) " +
+                    "VALUES (?, ?, ?, ?) " +
+                    "ON DUPLICATE KEY UPDATE " +
+                    "default_group = VALUES(default_group), " +
+                    "last_modified = VALUES(last_modified), " +
+                    "custom_settings = VALUES(custom_settings)";
 
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            try (Connection conn = dataSource.getConnection();
+                 PreparedStatement stmt = conn.prepareStatement(sql)) {
 
-            stmt.setString(1, worldName);
-            stmt.setString(2, metadata.getDefaultGroup());
-            stmt.setLong(3, metadata.getLastModified());
-            stmt.setString(4, gson.toJson(metadata.getCustomSettings()));
+                stmt.setString(1, worldName);
+                stmt.setString(2, metadata.getDefaultGroup());
+                stmt.setLong(3, metadata.getLastModified());
+                stmt.setString(4, gson.toJson(metadata.getCustomSettings()));
 
-            stmt.executeUpdate();
+                stmt.executeUpdate();
 
-            Debugger.log("[MySQLBackend] Saved world metadata for " + worldName);
+                Debugger.log("[MySQLBackend] Saved world metadata for " + worldName);
 
-        } catch (SQLException e) {
-            throw new StorageException("Failed to save world metadata for " + worldName, e);
-        }
+                return null; // Void operation
+            }
+        });
     }
 
     // ========== Change Detection ==========
 
     @Override
     public Set<ChangeRecord> getChangesSince(long timestamp, String worldName) throws StorageException {
-        String sql = "SELECT * FROM permissions_changelog " +
-                "WHERE world = ? AND timestamp > ? AND server_source != ? " +
-                "ORDER BY timestamp ASC";
+        return executeWithRetry(() -> {
+            String sql = "SELECT * FROM permissions_changelog " +
+                    "WHERE world = ? AND timestamp > ? AND server_source != ? " +
+                    "ORDER BY timestamp ASC";
 
-        Set<ChangeRecord> changes = new HashSet<>();
+            Set<ChangeRecord> changes = new HashSet<>();
 
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            try (Connection conn = dataSource.getConnection();
+                 PreparedStatement stmt = conn.prepareStatement(sql)) {
 
-            stmt.setString(1, worldName);
-            stmt.setLong(2, timestamp);
-            stmt.setString(3, serverId);
+                stmt.setString(1, worldName);
+                stmt.setLong(2, timestamp);
+                stmt.setString(3, serverId);
 
-            ResultSet rs = stmt.executeQuery();
-            while (rs.next()) {
-                changes.add(resultSetToChangeRecord(rs));
+                ResultSet rs = stmt.executeQuery();
+                while (rs.next()) {
+                    changes.add(resultSetToChangeRecord(rs));
+                }
+
+                return changes;
             }
-
-            return changes;
-
-        } catch (SQLException e) {
-            throw new StorageException("Failed to get changes since " + timestamp + " for world " + worldName, e);
-        }
+        });
     }
 
     @Override
     public long getLastModifiedTimestamp(String worldName) throws StorageException {
-        String sql = "SELECT MAX(timestamp) FROM permissions_changelog WHERE world = ?";
+        return executeWithRetry(() -> {
+            String sql = "SELECT MAX(timestamp) FROM permissions_changelog WHERE world = ?";
 
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            try (Connection conn = dataSource.getConnection();
+                 PreparedStatement stmt = conn.prepareStatement(sql)) {
 
-            stmt.setString(1, worldName);
-            ResultSet rs = stmt.executeQuery();
+                stmt.setString(1, worldName);
+                ResultSet rs = stmt.executeQuery();
 
-            if (rs.next()) {
-                return rs.getLong(1);
+                if (rs.next()) {
+                    return rs.getLong(1);
+                }
+                return 0L;
             }
-            return 0L;
-
-        } catch (SQLException e) {
-            throw new StorageException("Failed to get last modified timestamp for world " + worldName, e);
-        }
+        });
     }
 
     // ========== Batch Operations ==========
 
     @Override
     public Map<String, UserData> loadAllUsers(String worldName) throws StorageException {
-        String sql = "SELECT * FROM permissions_users WHERE world = ?";
-        Map<String, UserData> users = new HashMap<>();
+        return executeWithRetry(() -> {
+            String sql = "SELECT * FROM permissions_users WHERE world = ?";
+            Map<String, UserData> users = new HashMap<>();
 
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            try (Connection conn = dataSource.getConnection();
+                 PreparedStatement stmt = conn.prepareStatement(sql)) {
 
-            stmt.setString(1, worldName);
-            ResultSet rs = stmt.executeQuery();
+                stmt.setString(1, worldName);
+                ResultSet rs = stmt.executeQuery();
 
-            while (rs.next()) {
-                UserData userData = resultSetToUserData(rs);
-                users.put(userData.getUuid(), userData);
+                while (rs.next()) {
+                    UserData userData = resultSetToUserData(rs);
+                    users.put(userData.getUuid(), userData);
+                }
+
+                Debugger.log("[MySQLBackend] Loaded " + users.size() + " users for world " + worldName);
+                return users;
             }
-
-            Debugger.log("[MySQLBackend] Loaded " + users.size() + " users for world " + worldName);
-            return users;
-
-        } catch (SQLException e) {
-            throw new StorageException("Failed to load all users for world " + worldName, e);
-        }
+        });
     }
 
     @Override
     public Map<String, GroupData> loadAllGroups(String worldName) throws StorageException {
-        String sql = "SELECT * FROM permissions_groups WHERE world = ?";
-        Map<String, GroupData> groups = new HashMap<>();
+        return executeWithRetry(() -> {
+            String sql = "SELECT * FROM permissions_groups WHERE world = ?";
+            Map<String, GroupData> groups = new HashMap<>();
 
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement stmt = conn.prepareStatement(sql)) {
+            try (Connection conn = dataSource.getConnection();
+                 PreparedStatement stmt = conn.prepareStatement(sql)) {
 
-            stmt.setString(1, worldName);
-            ResultSet rs = stmt.executeQuery();
+                stmt.setString(1, worldName);
+                ResultSet rs = stmt.executeQuery();
 
-            while (rs.next()) {
-                GroupData groupData = resultSetToGroupData(rs);
-                groups.put(groupData.getName(), groupData);
+                while (rs.next()) {
+                    GroupData groupData = resultSetToGroupData(rs);
+                    groups.put(groupData.getName(), groupData);
+                }
+
+                Debugger.log("[MySQLBackend] Loaded " + groups.size() + " groups for world " + worldName);
+                return groups;
             }
-
-            Debugger.log("[MySQLBackend] Loaded " + groups.size() + " groups for world " + worldName);
-            return groups;
-
-        } catch (SQLException e) {
-            throw new StorageException("Failed to load all groups for world " + worldName, e);
-        }
+        });
     }
 
     // ========== Helper Methods ==========

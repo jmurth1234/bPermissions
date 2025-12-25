@@ -2,6 +2,9 @@ package de.bananaco.bpermissions.imp.storage;
 
 import com.mongodb.ConnectionString;
 import com.mongodb.MongoClientSettings;
+import com.mongodb.MongoException;
+import com.mongodb.MongoSocketException;
+import com.mongodb.MongoTimeoutException;
 import com.mongodb.client.*;
 import com.mongodb.client.model.*;
 import com.mongodb.client.result.InsertOneResult;
@@ -47,33 +50,36 @@ public class MongoBackend implements StorageBackend {
 
     private String serverId;  // Unique ID for this server instance
 
+    // Connection configuration (stored for reconnection)
+    private String connectionString;
+    private String databaseName;
+    private int maxReconnectAttempts = 3;
+    private long reconnectDelayMs = 5000; // 5 seconds
+
     @Override
     public void initialize(Map<String, Object> config) throws StorageException {
         try {
-            // Extract configuration
-            String connectionString = (String) config.get("connection-string");
-            if (connectionString == null) {
+            // Extract and store configuration for reconnection
+            this.connectionString = (String) config.get("connection-string");
+            if (this.connectionString == null) {
                 throw new StorageException("MongoDB connection-string not provided in configuration");
             }
 
-            String databaseName = (String) config.getOrDefault("database", "bpermissions");
+            this.databaseName = (String) config.getOrDefault("database", "bpermissions");
             this.serverId = (String) config.getOrDefault("server-id", UUID.randomUUID().toString());
+
+            // Optional reconnection configuration
+            if (config.containsKey("max-reconnect-attempts")) {
+                this.maxReconnectAttempts = (Integer) config.get("max-reconnect-attempts");
+            }
+            if (config.containsKey("reconnect-delay-ms")) {
+                this.reconnectDelayMs = ((Number) config.get("reconnect-delay-ms")).longValue();
+            }
 
             Debugger.log("[MongoBackend] Initializing with database: " + databaseName + ", server-id: " + serverId);
 
             // Create MongoClient with connection pooling
-            ConnectionString connString = new ConnectionString(connectionString);
-            MongoClientSettings settings = MongoClientSettings.builder()
-                    .applyConnectionString(connString)
-                    .applyToConnectionPoolSettings(builder ->
-                            builder.maxSize(20)  // Max connections for 6+ servers
-                                    .minSize(5)  // Min idle connections
-                                    .maxWaitTime(10, TimeUnit.SECONDS)
-                                    .maxConnectionLifeTime(30, TimeUnit.MINUTES)
-                                    .maxConnectionIdleTime(10, TimeUnit.MINUTES))
-                    .build();
-
-            mongoClient = MongoClients.create(settings);
+            mongoClient = MongoClients.create(createMongoClientSettings());
             database = mongoClient.getDatabase(databaseName);
 
             // Get collections
@@ -90,6 +96,140 @@ public class MongoBackend implements StorageBackend {
         } catch (Exception e) {
             throw new StorageException.ConnectionFailedException("Failed to initialize MongoDB backend", e);
         }
+    }
+
+    /**
+     * Create MongoClient settings for MongoDB connection pool.
+     * <p>
+     * This method is extracted to allow reuse during reconnection.
+     * </p>
+     *
+     * @return Configured MongoClientSettings instance
+     */
+    private MongoClientSettings createMongoClientSettings() {
+        ConnectionString connString = new ConnectionString(connectionString);
+        return MongoClientSettings.builder()
+                .applyConnectionString(connString)
+                .applyToConnectionPoolSettings(builder ->
+                        builder.maxSize(20)  // Max connections for 6+ servers
+                                .minSize(5)  // Min idle connections
+                                .maxWaitTime(10, TimeUnit.SECONDS)
+                                .maxConnectionLifeTime(30, TimeUnit.MINUTES)
+                                .maxConnectionIdleTime(10, TimeUnit.MINUTES))
+                .build();
+    }
+
+    /**
+     * Attempt to reconnect to MongoDB.
+     * <p>
+     * This method closes the existing MongoClient and creates a new one.
+     * Used for automatic recovery when MongoDB connection is lost.
+     * </p>
+     *
+     * @return true if reconnection succeeded, false otherwise
+     */
+    private synchronized boolean reconnect() {
+        try {
+            Debugger.log("[MongoBackend] Attempting to reconnect to MongoDB...");
+
+            // Close old client
+            if (mongoClient != null) {
+                try {
+                    mongoClient.close();
+                } catch (Exception e) {
+                    Debugger.log("[MongoBackend] Error closing old MongoClient: " + e.getMessage());
+                }
+            }
+
+            // Wait before reconnecting to avoid connection storms
+            Thread.sleep(reconnectDelayMs);
+
+            // Create new client and reinitialize collections
+            mongoClient = MongoClients.create(createMongoClientSettings());
+            database = mongoClient.getDatabase(databaseName);
+
+            usersCollection = database.getCollection(COLLECTION_USERS);
+            groupsCollection = database.getCollection(COLLECTION_GROUPS);
+            worldsCollection = database.getCollection(COLLECTION_WORLDS);
+            changelogCollection = database.getCollection(COLLECTION_CHANGELOG);
+
+            // Verify connection with ping
+            database.runCommand(new Document("ping", 1));
+
+            Debugger.log("[MongoBackend] Successfully reconnected to MongoDB");
+            return true;
+
+        } catch (Exception e) {
+            Debugger.log("[MongoBackend] Reconnection failed: " + e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Check if a MongoException is a connection-related error that should trigger reconnection.
+     * <p>
+     * Connection errors include socket exceptions, timeout exceptions, and specific error codes.
+     * </p>
+     *
+     * @param e The MongoException to check
+     * @return true if this is a connection error, false otherwise
+     */
+    private boolean shouldRetryOnError(MongoException e) {
+        // Socket and timeout exceptions are always connection errors
+        if (e instanceof MongoSocketException || e instanceof MongoTimeoutException) {
+            return true;
+        }
+
+        // Check for specific error codes related to connection issues
+        // Error code 89: Network timeout
+        // Error code 6: Host unreachable
+        // Error code 7: Host not found
+        // Error code 91: Shutdown in progress
+        int errorCode = e.getCode();
+        return errorCode == 89 || errorCode == 6 || errorCode == 7 || errorCode == 91;
+    }
+
+    /**
+     * Execute a MongoDB operation with automatic retry on connection failure.
+     * <p>
+     * This method wraps MongoDB operations and automatically retries once
+     * after attempting to reconnect if a connection error is detected.
+     * </p>
+     *
+     * @param operation The MongoDB operation to execute
+     * @param <T> The return type of the operation
+     * @return The result of the operation
+     * @throws StorageException if the operation fails (even after retry)
+     */
+    private <T> T executeWithRetry(MongoOperation<T> operation) throws StorageException {
+        for (int attempt = 0; attempt <= 1; attempt++) {
+            try {
+                return operation.execute();
+            } catch (MongoException e) {
+                // Only retry on first attempt and if it's a connection error
+                if (attempt == 0 && shouldRetryOnError(e)) {
+                    Debugger.log("[MongoBackend] Connection error detected, attempting reconnection...");
+                    if (reconnect()) {
+                        Debugger.log("[MongoBackend] Reconnected, retrying operation...");
+                        continue; // Retry the operation
+                    } else {
+                        Debugger.log("[MongoBackend] Reconnection failed");
+                    }
+                }
+                // Either not a connection error, or retry failed
+                throw new StorageException.ConnectionFailedException("MongoDB operation failed", e);
+            }
+        }
+        // Should never reach here, but satisfy compiler
+        throw new StorageException("MongoDB operation failed after retry");
+    }
+
+    /**
+     * Functional interface for MongoDB operations that can be retried.
+     */
+    @FunctionalInterface
+    private interface MongoOperation<T> {
+        T execute() throws MongoException;
     }
 
     @Override
@@ -148,7 +288,7 @@ public class MongoBackend implements StorageBackend {
 
     @Override
     public UserData loadUser(String uuid, String worldName) throws StorageException {
-        try {
+        return executeWithRetry(() -> {
             Document filter = new Document("_id", buildUserId(uuid, worldName));
             Document doc = usersCollection.find(filter).first();
 
@@ -157,17 +297,14 @@ public class MongoBackend implements StorageBackend {
             }
 
             return documentToUserData(doc);
-
-        } catch (Exception e) {
-            throw new StorageException("Failed to load user " + uuid + " in world " + worldName, e);
-        }
+        });
     }
 
     @Override
     public void saveUser(UserData userData, String worldName) throws StorageException {
-        try {
-            userData.setLastModified(System.currentTimeMillis());
+        userData.setLastModified(System.currentTimeMillis());
 
+        executeWithRetry(() -> {
             Document doc = userDataToDocument(userData, worldName);
             String id = buildUserId(userData.getUuid(), worldName);
             doc.put("_id", id);
@@ -183,24 +320,21 @@ public class MongoBackend implements StorageBackend {
 
             Debugger.log("[MongoBackend] Saved user " + userData.getUuid() + " in world " + worldName);
 
-        } catch (Exception e) {
-            throw new StorageException("Failed to save user " + userData.getUuid() + " in world " + worldName, e);
-        }
+            return null; // Void operation
+        });
     }
 
     @Override
     public boolean userExists(String uuid, String worldName) throws StorageException {
-        try {
+        return executeWithRetry(() -> {
             Document filter = new Document("_id", buildUserId(uuid, worldName));
             return usersCollection.countDocuments(filter) > 0;
-        } catch (Exception e) {
-            throw new StorageException("Failed to check if user exists: " + uuid, e);
-        }
+        });
     }
 
     @Override
     public Set<String> getAllUserIds(String worldName) throws StorageException {
-        try {
+        return executeWithRetry(() -> {
             Set<String> uuids = new HashSet<>();
             Document filter = new Document("world", worldName);
             FindIterable<Document> results = usersCollection.find(filter).projection(Projections.include("uuid"));
@@ -213,14 +347,12 @@ public class MongoBackend implements StorageBackend {
             }
 
             return uuids;
-        } catch (Exception e) {
-            throw new StorageException("Failed to get all user IDs for world " + worldName, e);
-        }
+        });
     }
 
     @Override
     public void deleteUser(String uuid, String worldName) throws StorageException {
-        try {
+        executeWithRetry(() -> {
             Document filter = new Document("_id", buildUserId(uuid, worldName));
             usersCollection.deleteOne(filter);
 
@@ -229,16 +361,15 @@ public class MongoBackend implements StorageBackend {
 
             Debugger.log("[MongoBackend] Deleted user " + uuid + " from world " + worldName);
 
-        } catch (Exception e) {
-            throw new StorageException("Failed to delete user " + uuid + " from world " + worldName, e);
-        }
+            return null; // Void operation
+        });
     }
 
     // ========== Group Operations ==========
 
     @Override
     public GroupData loadGroup(String groupName, String worldName) throws StorageException {
-        try {
+        return executeWithRetry(() -> {
             Document filter = new Document("_id", buildGroupId(groupName, worldName));
             Document doc = groupsCollection.find(filter).first();
 
@@ -247,17 +378,14 @@ public class MongoBackend implements StorageBackend {
             }
 
             return documentToGroupData(doc);
-
-        } catch (Exception e) {
-            throw new StorageException("Failed to load group " + groupName + " in world " + worldName, e);
-        }
+        });
     }
 
     @Override
     public void saveGroup(GroupData groupData, String worldName) throws StorageException {
-        try {
-            groupData.setLastModified(System.currentTimeMillis());
+        groupData.setLastModified(System.currentTimeMillis());
 
+        executeWithRetry(() -> {
             Document doc = groupDataToDocument(groupData, worldName);
             String id = buildGroupId(groupData.getName(), worldName);
             doc.put("_id", id);
@@ -273,24 +401,21 @@ public class MongoBackend implements StorageBackend {
 
             Debugger.log("[MongoBackend] Saved group " + groupData.getName() + " in world " + worldName);
 
-        } catch (Exception e) {
-            throw new StorageException("Failed to save group " + groupData.getName() + " in world " + worldName, e);
-        }
+            return null; // Void operation
+        });
     }
 
     @Override
     public boolean groupExists(String groupName, String worldName) throws StorageException {
-        try {
+        return executeWithRetry(() -> {
             Document filter = new Document("_id", buildGroupId(groupName, worldName));
             return groupsCollection.countDocuments(filter) > 0;
-        } catch (Exception e) {
-            throw new StorageException("Failed to check if group exists: " + groupName, e);
-        }
+        });
     }
 
     @Override
     public Set<String> getAllGroupNames(String worldName) throws StorageException {
-        try {
+        return executeWithRetry(() -> {
             Set<String> groupNames = new HashSet<>();
             Document filter = new Document("world", worldName);
             FindIterable<Document> results = groupsCollection.find(filter).projection(Projections.include("name"));
@@ -303,14 +428,12 @@ public class MongoBackend implements StorageBackend {
             }
 
             return groupNames;
-        } catch (Exception e) {
-            throw new StorageException("Failed to get all group names for world " + worldName, e);
-        }
+        });
     }
 
     @Override
     public void deleteGroup(String groupName, String worldName) throws StorageException {
-        try {
+        executeWithRetry(() -> {
             Document filter = new Document("_id", buildGroupId(groupName, worldName));
             groupsCollection.deleteOne(filter);
 
@@ -319,16 +442,15 @@ public class MongoBackend implements StorageBackend {
 
             Debugger.log("[MongoBackend] Deleted group " + groupName + " from world " + worldName);
 
-        } catch (Exception e) {
-            throw new StorageException("Failed to delete group " + groupName + " from world " + worldName, e);
-        }
+            return null; // Void operation
+        });
     }
 
     // ========== World Metadata Operations ==========
 
     @Override
     public WorldMetadata loadWorldMetadata(String worldName) throws StorageException {
-        try {
+        return executeWithRetry(() -> {
             Document filter = new Document("_id", worldName);
             Document doc = worldsCollection.find(filter).first();
 
@@ -337,17 +459,14 @@ public class MongoBackend implements StorageBackend {
             }
 
             return documentToWorldMetadata(doc);
-
-        } catch (Exception e) {
-            throw new StorageException("Failed to load world metadata for " + worldName, e);
-        }
+        });
     }
 
     @Override
     public void saveWorldMetadata(WorldMetadata metadata, String worldName) throws StorageException {
-        try {
-            metadata.setLastModified(System.currentTimeMillis());
+        metadata.setLastModified(System.currentTimeMillis());
 
+        executeWithRetry(() -> {
             Document doc = worldMetadataToDocument(metadata);
             doc.put("_id", worldName);
 
@@ -359,16 +478,15 @@ public class MongoBackend implements StorageBackend {
 
             Debugger.log("[MongoBackend] Saved world metadata for " + worldName);
 
-        } catch (Exception e) {
-            throw new StorageException("Failed to save world metadata for " + worldName, e);
-        }
+            return null; // Void operation
+        });
     }
 
     // ========== Change Detection ==========
 
     @Override
     public Set<ChangeRecord> getChangesSince(long timestamp, String worldName) throws StorageException {
-        try {
+        return executeWithRetry(() -> {
             Set<ChangeRecord> changes = new HashSet<>();
 
             // Query: world matches, timestamp > given timestamp, serverSource != this server
@@ -384,15 +502,12 @@ public class MongoBackend implements StorageBackend {
             }
 
             return changes;
-
-        } catch (Exception e) {
-            throw new StorageException("Failed to get changes since " + timestamp + " for world " + worldName, e);
-        }
+        });
     }
 
     @Override
     public long getLastModifiedTimestamp(String worldName) throws StorageException {
-        try {
+        return executeWithRetry(() -> {
             Document filter = new Document("world", worldName);
             Document result = changelogCollection.find(filter)
                     .sort(Sorts.descending("timestamp"))
@@ -404,17 +519,14 @@ public class MongoBackend implements StorageBackend {
             }
 
             return result.getLong("timestamp");
-
-        } catch (Exception e) {
-            throw new StorageException("Failed to get last modified timestamp for world " + worldName, e);
-        }
+        });
     }
 
     // ========== Batch Operations ==========
 
     @Override
     public Map<String, UserData> loadAllUsers(String worldName) throws StorageException {
-        try {
+        return executeWithRetry(() -> {
             Map<String, UserData> users = new HashMap<>();
             Document filter = new Document("world", worldName);
             FindIterable<Document> results = usersCollection.find(filter);
@@ -426,15 +538,12 @@ public class MongoBackend implements StorageBackend {
 
             Debugger.log("[MongoBackend] Loaded " + users.size() + " users for world " + worldName);
             return users;
-
-        } catch (Exception e) {
-            throw new StorageException("Failed to load all users for world " + worldName, e);
-        }
+        });
     }
 
     @Override
     public Map<String, GroupData> loadAllGroups(String worldName) throws StorageException {
-        try {
+        return executeWithRetry(() -> {
             Map<String, GroupData> groups = new HashMap<>();
             Document filter = new Document("world", worldName);
             FindIterable<Document> results = groupsCollection.find(filter);
@@ -446,10 +555,7 @@ public class MongoBackend implements StorageBackend {
 
             Debugger.log("[MongoBackend] Loaded " + groups.size() + " groups for world " + worldName);
             return groups;
-
-        } catch (Exception e) {
-            throw new StorageException("Failed to load all groups for world " + worldName, e);
-        }
+        });
     }
 
     // ========== Helper Methods ==========
