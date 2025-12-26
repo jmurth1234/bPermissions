@@ -1,11 +1,8 @@
 package de.bananaco.bpermissions.imp.storage;
 
-import com.google.gson.Gson;
-import com.google.gson.reflect.TypeToken;
 import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import de.bananaco.bpermissions.api.CalculableType;
-import de.bananaco.bpermissions.api.storage.StorageBackend;
 import de.bananaco.bpermissions.api.storage.StorageException;
 import de.bananaco.bpermissions.api.storage.dto.ChangeRecord;
 import de.bananaco.bpermissions.api.storage.dto.GroupData;
@@ -32,11 +29,9 @@ import java.util.*;
  * Uses HikariCP for connection pooling and Gson for JSON serialization.
  * </p>
  */
-public class MySQLBackend implements StorageBackend {
+public class MySQLBackend extends AbstractSQLBackend {
 
     private HikariDataSource dataSource;
-    private final Gson gson = new Gson();
-    private String serverId;
 
     // Connection configuration (stored for reconnection)
     private String host;
@@ -44,8 +39,6 @@ public class MySQLBackend implements StorageBackend {
     private String database;
     private String username;
     private String password;
-    private int maxReconnectAttempts = 3;
-    private long reconnectDelayMs = 5000; // 5 seconds
 
     // Connection pool configuration
     private int maxPoolSize = 10;  // Default: suitable for single server
@@ -55,14 +48,6 @@ public class MySQLBackend implements StorageBackend {
     private boolean useSSL = false;           // Default: SSL disabled for backward compatibility
     private boolean requireSSL = false;       // Default: don't require SSL
     private boolean verifyServerCertificate = true;  // Default: verify cert if SSL is used
-
-    // Transaction support - per-thread transaction connection
-    private final ThreadLocal<Connection> transactionConnection = new ThreadLocal<>();
-
-    // Type tokens for Gson deserialization
-    private static final Type LIST_STRING_TYPE = new TypeToken<List<String>>() {}.getType();
-    private static final Type MAP_STRING_STRING_TYPE = new TypeToken<Map<String, String>>() {}.getType();
-    private static final Type MAP_STRING_OBJECT_TYPE = new TypeToken<Map<String, Object>>() {}.getType();
 
     @Override
     public void initialize(Map<String, Object> config) throws StorageException {
@@ -75,7 +60,7 @@ public class MySQLBackend implements StorageBackend {
             this.password = (String) config.get("password");
             this.serverId = (String) config.getOrDefault("server-id", UUID.randomUUID().toString());
 
-            // Optional reconnection configuration
+            // Optional reconnection configuration (stored in parent class)
             if (config.containsKey("max-reconnect-attempts")) {
                 this.maxReconnectAttempts = (Integer) config.get("max-reconnect-attempts");
             }
@@ -175,16 +160,20 @@ public class MySQLBackend implements StorageBackend {
         return hikariConfig;
     }
 
-    /**
-     * Attempt to reconnect to the database.
-     * <p>
-     * This method closes the existing data source and creates a new one.
-     * Used for automatic recovery when database connection is lost.
-     * </p>
-     *
-     * @return true if reconnection succeeded, false otherwise
-     */
-    private synchronized boolean reconnect() {
+    // ========== AbstractSQLBackend Implementation ==========
+
+    @Override
+    protected String getBackendName() {
+        return "MySQLBackend";
+    }
+
+    @Override
+    protected Connection getConnection() throws SQLException {
+        return dataSource.getConnection();
+    }
+
+    @Override
+    protected boolean reconnect() {
         try {
             Debugger.log("[MySQLBackend] Attempting to reconnect to database...");
 
@@ -219,17 +208,8 @@ public class MySQLBackend implements StorageBackend {
         }
     }
 
-    /**
-     * Check if a SQLException is a connection-related error that should trigger reconnection.
-     * <p>
-     * Connection errors typically have SQL state codes starting with '08'.
-     * See: https://dev.mysql.com/doc/connector-j/8.0/en/connector-j-reference-error-sqlstates.html
-     * </p>
-     *
-     * @param e The SQLException to check
-     * @return true if this is a connection error, false otherwise
-     */
-    private boolean shouldRetryOnError(SQLException e) {
+    @Override
+    protected boolean shouldRetryOnSQLError(SQLException e) {
         String sqlState = e.getSQLState();
         if (sqlState == null) {
             return false;
@@ -245,163 +225,8 @@ public class MySQLBackend implements StorageBackend {
         return sqlState.startsWith("08");
     }
 
-    /**
-     * Execute a database operation with automatic retry on connection failure.
-     * <p>
-     * This method wraps database operations and automatically retries up to
-     * maxReconnectAttempts times after attempting to reconnect if a connection
-     * error is detected.
-     * </p>
-     *
-     * @param operation The database operation to execute
-     * @param <T> The return type of the operation
-     * @return The result of the operation
-     * @throws StorageException if the operation fails (even after retries)
-     */
-    private <T> T executeWithRetry(DatabaseOperation<T> operation) throws StorageException {
-        for (int attempt = 0; attempt <= maxReconnectAttempts; attempt++) {
-            try {
-                return operation.execute();
-            } catch (SQLException e) {
-                // Only retry if not the last attempt and it's a connection error
-                if (attempt < maxReconnectAttempts && shouldRetryOnError(e)) {
-                    Debugger.log("[MySQLBackend] Connection error detected (attempt " + (attempt + 1) +
-                            "/" + maxReconnectAttempts + "), attempting reconnection...");
-                    if (reconnect()) {
-                        Debugger.log("[MySQLBackend] Reconnected, retrying operation...");
-                        continue; // Retry the operation
-                    } else {
-                        Debugger.log("[MySQLBackend] Reconnection failed");
-                    }
-                }
-                // Either not a connection error, out of retries, or reconnect failed
-                throw new StorageException.ConnectionFailedException("Database operation failed after " +
-                        (attempt + 1) + " attempt(s)", e);
-            }
-        }
-        // Should never reach here, but satisfy compiler
-        throw new StorageException("Database operation failed after " + maxReconnectAttempts + " retry attempts");
-    }
-
-    /**
-     * Functional interface for database operations that can be retried.
-     */
-    @FunctionalInterface
-    private interface DatabaseOperation<T> {
-        T execute() throws SQLException;
-    }
-
-    // ========== Transaction Support ==========
-
-    /**
-     * Wrapper for Connection that only closes if not in a transaction.
-     * This allows using try-with-resources while respecting transaction boundaries.
-     */
-    private class TransactionAwareConnection implements AutoCloseable {
-        private final Connection connection;
-        private final boolean isTransactionConnection;
-
-        public TransactionAwareConnection() throws SQLException {
-            Connection txConn = transactionConnection.get();
-            if (txConn != null) {
-                this.connection = txConn;
-                this.isTransactionConnection = true;
-            } else {
-                this.connection = dataSource.getConnection();
-                this.isTransactionConnection = false;
-            }
-        }
-
-        public Connection get() {
-            return connection;
-        }
-
-        @Override
-        public void close() throws SQLException {
-            // Only close if this is NOT a transaction connection
-            // Transaction connections are managed by commit/rollback
-            if (!isTransactionConnection) {
-                connection.close();
-            }
-        }
-    }
-
-    @Override
-    public void beginTransaction() throws StorageException {
-        if (transactionConnection.get() != null) {
-            throw new StorageException("Transaction already active on this thread");
-        }
-
-        try {
-            Connection conn = dataSource.getConnection();
-            conn.setAutoCommit(false);
-            transactionConnection.set(conn);
-            Debugger.log("[MySQLBackend] Transaction started on thread " + Thread.currentThread().getName());
-        } catch (SQLException e) {
-            throw new StorageException("Failed to begin transaction", e);
-        }
-    }
-
-    @Override
-    public void commitTransaction() throws StorageException {
-        Connection conn = transactionConnection.get();
-        if (conn == null) {
-            throw new StorageException("No active transaction to commit");
-        }
-
-        try {
-            conn.commit();
-            Debugger.log("[MySQLBackend] Transaction committed on thread " + Thread.currentThread().getName());
-        } catch (SQLException e) {
-            throw new StorageException("Failed to commit transaction", e);
-        } finally {
-            try {
-                conn.setAutoCommit(true);
-                conn.close();
-            } catch (SQLException e) {
-                Debugger.log("[MySQLBackend] Error cleaning up transaction connection: " + e.getMessage());
-            }
-            transactionConnection.remove();
-        }
-    }
-
-    @Override
-    public void rollbackTransaction() throws StorageException {
-        Connection conn = transactionConnection.get();
-        if (conn == null) {
-            throw new StorageException("No active transaction to rollback");
-        }
-
-        try {
-            conn.rollback();
-            Debugger.log("[MySQLBackend] Transaction rolled back on thread " + Thread.currentThread().getName());
-        } catch (SQLException e) {
-            throw new StorageException("Failed to rollback transaction", e);
-        } finally {
-            try {
-                conn.setAutoCommit(true);
-                conn.close();
-            } catch (SQLException e) {
-                Debugger.log("[MySQLBackend] Error cleaning up transaction connection: " + e.getMessage());
-            }
-            transactionConnection.remove();
-        }
-    }
-
     @Override
     public void shutdown() throws StorageException {
-        // Clean up any lingering transaction connections
-        Connection txConn = transactionConnection.get();
-        if (txConn != null) {
-            try {
-                txConn.rollback();
-                txConn.close();
-            } catch (SQLException e) {
-                Debugger.log("[MySQLBackend] Error cleaning up transaction during shutdown: " + e.getMessage());
-            }
-            transactionConnection.remove();
-        }
-
         try {
             if (dataSource != null && !dataSource.isClosed()) {
                 dataSource.close();
@@ -917,14 +742,6 @@ public class MySQLBackend implements StorageBackend {
     }
 
     // ========== Helper Methods ==========
-
-    private String buildUserId(String uuid, String worldName) {
-        return uuid + "_" + worldName;
-    }
-
-    private String buildGroupId(String groupName, String worldName) {
-        return groupName + "_" + worldName;
-    }
 
     private void logChange(String worldName, CalculableType type, String name, ChangeRecord.ChangeType changeType) {
         String sql = "INSERT INTO permissions_changelog (world, calculable_type, calculable_name, change_type, timestamp, server_source) " +

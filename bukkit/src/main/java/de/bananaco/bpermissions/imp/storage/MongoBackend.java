@@ -34,7 +34,7 @@ import java.util.concurrent.TimeUnit;
  * </ul>
  * </p>
  */
-public class MongoBackend implements StorageBackend {
+public class MongoBackend extends AbstractDatabaseBackend {
 
     private static final String COLLECTION_USERS = "permissions_users";
     private static final String COLLECTION_GROUPS = "permissions_groups";
@@ -48,13 +48,9 @@ public class MongoBackend implements StorageBackend {
     private MongoCollection<Document> worldsCollection;
     private MongoCollection<Document> changelogCollection;
 
-    private String serverId;  // Unique ID for this server instance
-
     // Connection configuration (stored for reconnection)
     private String connectionString;
     private String databaseName;
-    private int maxReconnectAttempts = 3;
-    private long reconnectDelayMs = 5000; // 5 seconds
 
     // Connection pool configuration
     private int maxPoolSize = 10;  // Default: suitable for single server
@@ -184,16 +180,15 @@ public class MongoBackend implements StorageBackend {
         }
     }
 
-    /**
-     * Attempt to reconnect to MongoDB.
-     * <p>
-     * This method closes the existing MongoClient and creates a new one.
-     * Used for automatic recovery when MongoDB connection is lost.
-     * </p>
-     *
-     * @return true if reconnection succeeded, false otherwise
-     */
-    private synchronized boolean reconnect() {
+    // ========== AbstractDatabaseBackend Implementation ==========
+
+    @Override
+    protected String getBackendName() {
+        return "MongoBackend";
+    }
+
+    @Override
+    protected boolean reconnect() {
         try {
             Debugger.log("[MongoBackend] Attempting to reconnect to MongoDB...");
 
@@ -231,17 +226,24 @@ public class MongoBackend implements StorageBackend {
     }
 
     /**
-     * Check if a MongoException is a connection-related error that should trigger reconnection.
+     * Check if an exception is a connection-related error that should trigger reconnection.
      * <p>
      * Connection errors include socket exceptions, timeout exceptions, and specific error codes.
      * </p>
      *
-     * @param e The MongoException to check
+     * @param e The exception to check
      * @return true if this is a connection error, false otherwise
      */
-    private boolean shouldRetryOnError(MongoException e) {
+    @Override
+    protected boolean shouldRetryOnError(Exception e) {
+        if (!(e instanceof MongoException)) {
+            return false;
+        }
+
+        MongoException mongoException = (MongoException) e;
+
         // Socket and timeout exceptions are always connection errors
-        if (e instanceof MongoSocketException || e instanceof MongoTimeoutException) {
+        if (mongoException instanceof MongoSocketException || mongoException instanceof MongoTimeoutException) {
             return true;
         }
 
@@ -250,54 +252,8 @@ public class MongoBackend implements StorageBackend {
         // Error code 6: Host unreachable
         // Error code 7: Host not found
         // Error code 91: Shutdown in progress
-        int errorCode = e.getCode();
+        int errorCode = mongoException.getCode();
         return errorCode == 89 || errorCode == 6 || errorCode == 7 || errorCode == 91;
-    }
-
-    /**
-     * Execute a MongoDB operation with automatic retry on connection failure.
-     * <p>
-     * This method wraps MongoDB operations and automatically retries up to
-     * maxReconnectAttempts times after attempting to reconnect if a connection
-     * error is detected.
-     * </p>
-     *
-     * @param operation The MongoDB operation to execute
-     * @param <T> The return type of the operation
-     * @return The result of the operation
-     * @throws StorageException if the operation fails (even after retries)
-     */
-    private <T> T executeWithRetry(MongoOperation<T> operation) throws StorageException {
-        for (int attempt = 0; attempt <= maxReconnectAttempts; attempt++) {
-            try {
-                return operation.execute();
-            } catch (MongoException e) {
-                // Only retry if not the last attempt and it's a connection error
-                if (attempt < maxReconnectAttempts && shouldRetryOnError(e)) {
-                    Debugger.log("[MongoBackend] Connection error detected (attempt " + (attempt + 1) +
-                            "/" + maxReconnectAttempts + "), attempting reconnection...");
-                    if (reconnect()) {
-                        Debugger.log("[MongoBackend] Reconnected, retrying operation...");
-                        continue; // Retry the operation
-                    } else {
-                        Debugger.log("[MongoBackend] Reconnection failed");
-                    }
-                }
-                // Either not a connection error, out of retries, or reconnect failed
-                throw new StorageException.ConnectionFailedException("MongoDB operation failed after " +
-                        (attempt + 1) + " attempt(s)", e);
-            }
-        }
-        // Should never reach here, but satisfy compiler
-        throw new StorageException("MongoDB operation failed after " + maxReconnectAttempts + " retry attempts");
-    }
-
-    /**
-     * Functional interface for MongoDB operations that can be retried.
-     */
-    @FunctionalInterface
-    private interface MongoOperation<T> {
-        T execute() throws MongoException;
     }
 
     @Override
@@ -627,20 +583,6 @@ public class MongoBackend implements StorageBackend {
     }
 
     // ========== Helper Methods ==========
-
-    /**
-     * Build a unique user ID for MongoDB _id field.
-     */
-    private String buildUserId(String uuid, String worldName) {
-        return uuid + "_" + worldName;
-    }
-
-    /**
-     * Build a unique group ID for MongoDB _id field.
-     */
-    private String buildGroupId(String groupName, String worldName) {
-        return groupName + "_" + worldName;
-    }
 
     /**
      * Log a change to the changelog collection.
