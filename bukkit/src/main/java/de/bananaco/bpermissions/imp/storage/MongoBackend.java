@@ -90,6 +90,9 @@ public class MongoBackend implements StorageBackend {
 
             Debugger.log("[MongoBackend] Initializing with database: " + databaseName + ", server-id: " + serverId);
 
+            // Security check: warn if connection string lacks authentication
+            validateConnectionSecurity();
+
             // Create MongoClient with connection pooling
             mongoClient = MongoClients.create(createMongoClientSettings());
             database = mongoClient.getDatabase(databaseName);
@@ -130,6 +133,55 @@ public class MongoBackend implements StorageBackend {
                                 .maxConnectionLifeTime(30, TimeUnit.MINUTES)
                                 .maxConnectionIdleTime(10, TimeUnit.MINUTES))
                 .build();
+    }
+
+    /**
+     * Validate MongoDB connection security and warn if authentication is missing.
+     * <p>
+     * This method checks if the connection string contains authentication credentials.
+     * If no credentials are found, a security warning is logged to alert administrators
+     * that the database connection is not authenticated, which is a security risk.
+     * </p>
+     * <p>
+     * Common patterns checked:
+     * - mongodb://username:password@host:port
+     * - mongodb+srv://username:password@cluster
+     * - Connection strings with authSource parameter
+     * </p>
+     */
+    private void validateConnectionSecurity() {
+        String lowerConnectionString = connectionString.toLowerCase();
+
+        // Check for username:password pattern in connection string
+        boolean hasAuthInUri = lowerConnectionString.matches(".*://[^:@]+:[^@]+@.*");
+
+        // Check for authSource parameter (indicates auth is configured)
+        boolean hasAuthSource = lowerConnectionString.contains("authsource=");
+
+        // Check for authentication mechanism
+        boolean hasAuthMechanism = lowerConnectionString.contains("authmechanism=");
+
+        if (!hasAuthInUri && !hasAuthSource && !hasAuthMechanism) {
+            // Log security warning
+            System.err.println("==================================================================");
+            System.err.println("  [bPermissions] SECURITY WARNING: MongoDB Authentication Missing");
+            System.err.println("==================================================================");
+            System.err.println("  Your MongoDB connection string does not appear to include");
+            System.err.println("  authentication credentials. This is a security risk!");
+            System.err.println("");
+            System.err.println("  Recommended connection string format:");
+            System.err.println("    mongodb://username:password@host:port/database?authSource=admin");
+            System.err.println("");
+            System.err.println("  To fix this:");
+            System.err.println("  1. Create a MongoDB user with appropriate permissions");
+            System.err.println("  2. Update config.yml with authenticated connection string");
+            System.err.println("  3. Restart the server");
+            System.err.println("==================================================================");
+
+            Debugger.log("[MongoBackend] WARNING: No authentication detected in connection string");
+        } else {
+            Debugger.log("[MongoBackend] Authentication detected in connection string");
+        }
     }
 
     /**

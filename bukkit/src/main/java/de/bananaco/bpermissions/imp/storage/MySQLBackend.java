@@ -51,6 +51,11 @@ public class MySQLBackend implements StorageBackend {
     private int maxPoolSize = 10;  // Default: suitable for single server
     private int minIdle = 2;       // Default: minimum idle connections
 
+    // SSL/TLS configuration
+    private boolean useSSL = false;           // Default: SSL disabled for backward compatibility
+    private boolean requireSSL = false;       // Default: don't require SSL
+    private boolean verifyServerCertificate = true;  // Default: verify cert if SSL is used
+
     // Transaction support - per-thread transaction connection
     private final ThreadLocal<Connection> transactionConnection = new ThreadLocal<>();
 
@@ -86,11 +91,26 @@ public class MySQLBackend implements StorageBackend {
                 this.minIdle = (Integer) config.get("min-idle");
             }
 
+            // Optional SSL/TLS configuration
+            if (config.containsKey("use-ssl")) {
+                this.useSSL = (Boolean) config.get("use-ssl");
+            }
+            if (config.containsKey("require-ssl")) {
+                this.requireSSL = (Boolean) config.get("require-ssl");
+            }
+            if (config.containsKey("verify-server-certificate")) {
+                this.verifyServerCertificate = (Boolean) config.get("verify-server-certificate");
+            }
+
             if (host == null || database == null || username == null || password == null) {
                 throw new StorageException("MySQL configuration incomplete. Required: host, database, username, password");
             }
 
             Debugger.log("[MySQLBackend] Initializing with database: " + database + ", server-id: " + serverId);
+            if (useSSL) {
+                Debugger.log("[MySQLBackend] SSL/TLS enabled (require-ssl: " + requireSSL +
+                        ", verify-certificate: " + verifyServerCertificate + ")");
+            }
 
             // Create HikariCP data source
             dataSource = new HikariDataSource(createHikariConfig());
@@ -111,13 +131,30 @@ public class MySQLBackend implements StorageBackend {
      * This method is extracted to allow reuse during reconnection.
      * Pool sizes are configurable via config.yml for optimal performance tuning.
      * </p>
+     * <p>
+     * SSL/TLS Configuration:
+     * - useSSL: enables SSL/TLS encryption
+     * - requireSSL: forces SSL (connection fails if SSL unavailable)
+     * - verifyServerCertificate: validates server certificate against CA
+     * </p>
      *
      * @return Configured HikariConfig instance
      */
     private HikariConfig createHikariConfig() {
         HikariConfig hikariConfig = new HikariConfig();
-        hikariConfig.setJdbcUrl(String.format("jdbc:mysql://%s:%d/%s?useSSL=false&serverTimezone=UTC",
-                host, port, database));
+
+        // Build JDBC URL with SSL parameters
+        StringBuilder jdbcUrl = new StringBuilder();
+        jdbcUrl.append(String.format("jdbc:mysql://%s:%d/%s", host, port, database));
+        jdbcUrl.append("?serverTimezone=UTC");
+        jdbcUrl.append("&useSSL=").append(useSSL);
+
+        if (useSSL) {
+            jdbcUrl.append("&requireSSL=").append(requireSSL);
+            jdbcUrl.append("&verifyServerCertificate=").append(verifyServerCertificate);
+        }
+
+        hikariConfig.setJdbcUrl(jdbcUrl.toString());
         hikariConfig.setUsername(username);
         hikariConfig.setPassword(password);
 

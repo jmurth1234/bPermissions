@@ -1,11 +1,11 @@
 # bPermissions Database Storage - TODO Progress
 
 **Last Updated**: 2025-12-26
-**Progress**: 16/31 tasks completed (52%)
+**Progress**: 18/31 tasks completed (58%)
 
 ---
 
-## ✅ Completed Tasks (15)
+## ✅ Completed Tasks (18)
 
 ### Week 1 - Critical Fixes
 1. ✅ Create ErrorSanitizer utility class
@@ -26,21 +26,12 @@
 14. ✅ Implement changelog cleanup in MongoBackend
 15. ✅ Add automatic changelog cleanup to DatabaseWorld
 16. ✅ Create ChangelogCleanupCommand
+17. ✅ Enable SSL/TLS configuration for MySQL
+18. ✅ Add MongoDB auth validation warning
 
 ---
 
-## 📋 Pending Tasks (15)
-
-### Week 2 - Remaining (2 tasks)
-- [ ] **17. Enable SSL/TLS configuration for MySQL** 🎯 NEXT
-  - Add SSL config options to Config.java
-  - Update MySQLBackend to support SSL connections
-  - Document SSL setup in DATABASE_STORAGE.md
-
-- [ ] **18. Add MongoDB auth validation warning**
-  - Warn if MongoDB connection lacks authentication
-  - Check connection string for credentials
-  - Log security warning on startup
+## 📋 Pending Tasks (13)
 
 ### Week 3 - Monitoring & Observability (2 tasks)
 - [ ] **19. Create StorageMetrics class**
@@ -127,14 +118,14 @@
 | Category | Completed | Total | %
 |----------|-----------|-------|------
 | Critical Fixes | 8 | 8 | 100%
-| Advanced Features | 8 | 10 | 80%
+| Advanced Features | 10 | 10 | 100%
 | Monitoring | 0 | 2 | 0%
 | Code Quality | 0 | 2 | 0%
 | Testing | 0 | 4 | 0%
 | User Features | 0 | 1 | 0%
 | Documentation | 0 | 3 | 0%
 | Final | 0 | 1 | 0%
-| **TOTAL** | **16** | **31** | **52%**
+| **TOTAL** | **18** | **31** | **58%**
 
 ---
 
@@ -175,4 +166,4 @@ Complete ChangelogCleanupCommand implementation
 
 ---
 
-**🎯 Next Task**: Create ChangelogCleanupCommand
+**🎯 Next Task**: Create StorageMetrics class (Task #19)

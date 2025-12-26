@@ -95,6 +95,9 @@ public class Config {
             config.set("storage.mysql.server-id", "server-1");
             config.set("storage.mysql.max-pool-size", 10);
             config.set("storage.mysql.min-idle", 2);
+            config.set("storage.mysql.use-ssl", false);
+            config.set("storage.mysql.require-ssl", false);
+            config.set("storage.mysql.verify-server-certificate", true);
             storageSection = config.getConfigurationSection("storage");
         }
 
@@ -124,6 +127,9 @@ public class Config {
             mysqlConfig.put("server-id", mysqlSection.getString("server-id", "server-1"));
             mysqlConfig.put("max-pool-size", mysqlSection.getInt("max-pool-size", 10));
             mysqlConfig.put("min-idle", mysqlSection.getInt("min-idle", 2));
+            mysqlConfig.put("use-ssl", mysqlSection.getBoolean("use-ssl", false));
+            mysqlConfig.put("require-ssl", mysqlSection.getBoolean("require-ssl", false));
+            mysqlConfig.put("verify-server-certificate", mysqlSection.getBoolean("verify-server-certificate", true));
         }
 
         // Then set the worldmanager
