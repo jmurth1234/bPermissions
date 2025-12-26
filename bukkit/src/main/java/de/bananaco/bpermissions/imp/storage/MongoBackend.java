@@ -56,6 +56,10 @@ public class MongoBackend implements StorageBackend {
     private int maxReconnectAttempts = 3;
     private long reconnectDelayMs = 5000; // 5 seconds
 
+    // Connection pool configuration
+    private int maxPoolSize = 10;  // Default: suitable for single server
+    private int minIdle = 2;       // Default: minimum idle connections
+
     @Override
     public void initialize(Map<String, Object> config) throws StorageException {
         try {
@@ -74,6 +78,14 @@ public class MongoBackend implements StorageBackend {
             }
             if (config.containsKey("reconnect-delay-ms")) {
                 this.reconnectDelayMs = ((Number) config.get("reconnect-delay-ms")).longValue();
+            }
+
+            // Optional connection pool configuration
+            if (config.containsKey("max-pool-size")) {
+                this.maxPoolSize = (Integer) config.get("max-pool-size");
+            }
+            if (config.containsKey("min-idle")) {
+                this.minIdle = (Integer) config.get("min-idle");
             }
 
             Debugger.log("[MongoBackend] Initializing with database: " + databaseName + ", server-id: " + serverId);
@@ -102,6 +114,7 @@ public class MongoBackend implements StorageBackend {
      * Create MongoClient settings for MongoDB connection pool.
      * <p>
      * This method is extracted to allow reuse during reconnection.
+     * Pool sizes are configurable via config.yml for optimal performance tuning.
      * </p>
      *
      * @return Configured MongoClientSettings instance
@@ -111,8 +124,8 @@ public class MongoBackend implements StorageBackend {
         return MongoClientSettings.builder()
                 .applyConnectionString(connString)
                 .applyToConnectionPoolSettings(builder ->
-                        builder.maxSize(20)  // Max connections for 6+ servers
-                                .minSize(5)  // Min idle connections
+                        builder.maxSize(maxPoolSize)  // Configurable (default: 10)
+                                .minSize(minIdle)     // Configurable (default: 2)
                                 .maxWaitTime(10, TimeUnit.SECONDS)
                                 .maxConnectionLifeTime(30, TimeUnit.MINUTES)
                                 .maxConnectionIdleTime(10, TimeUnit.MINUTES))

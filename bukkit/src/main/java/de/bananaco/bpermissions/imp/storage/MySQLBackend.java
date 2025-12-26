@@ -47,6 +47,10 @@ public class MySQLBackend implements StorageBackend {
     private int maxReconnectAttempts = 3;
     private long reconnectDelayMs = 5000; // 5 seconds
 
+    // Connection pool configuration
+    private int maxPoolSize = 10;  // Default: suitable for single server
+    private int minIdle = 2;       // Default: minimum idle connections
+
     // Type tokens for Gson deserialization
     private static final Type LIST_STRING_TYPE = new TypeToken<List<String>>() {}.getType();
     private static final Type MAP_STRING_STRING_TYPE = new TypeToken<Map<String, String>>() {}.getType();
@@ -69,6 +73,14 @@ public class MySQLBackend implements StorageBackend {
             }
             if (config.containsKey("reconnect-delay-ms")) {
                 this.reconnectDelayMs = ((Number) config.get("reconnect-delay-ms")).longValue();
+            }
+
+            // Optional connection pool configuration
+            if (config.containsKey("max-pool-size")) {
+                this.maxPoolSize = (Integer) config.get("max-pool-size");
+            }
+            if (config.containsKey("min-idle")) {
+                this.minIdle = (Integer) config.get("min-idle");
             }
 
             if (host == null || database == null || username == null || password == null) {
@@ -94,6 +106,7 @@ public class MySQLBackend implements StorageBackend {
      * Create HikariCP configuration for MySQL connection pool.
      * <p>
      * This method is extracted to allow reuse during reconnection.
+     * Pool sizes are configurable via config.yml for optimal performance tuning.
      * </p>
      *
      * @return Configured HikariConfig instance
@@ -104,8 +117,11 @@ public class MySQLBackend implements StorageBackend {
                 host, port, database));
         hikariConfig.setUsername(username);
         hikariConfig.setPassword(password);
-        hikariConfig.setMaximumPoolSize(20);  // Max connections for 6+ servers
-        hikariConfig.setMinimumIdle(5);       // Min idle connections
+
+        // Configurable pool sizes (defaults: max=10, min=2)
+        hikariConfig.setMaximumPoolSize(maxPoolSize);
+        hikariConfig.setMinimumIdle(minIdle);
+
         hikariConfig.setConnectionTimeout(10000);
         hikariConfig.setIdleTimeout(600000);  // 10 minutes
         hikariConfig.setMaxLifetime(1800000); // 30 minutes

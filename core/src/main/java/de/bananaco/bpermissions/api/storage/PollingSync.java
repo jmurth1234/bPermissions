@@ -39,6 +39,10 @@ public class PollingSync {
 
     /**
      * Create a new PollingSync instance.
+     * <p>
+     * Poll interval is validated to be between 1 and 300 seconds (5 minutes).
+     * Values outside this range will be clamped and a warning will be logged.
+     * </p>
      *
      * @param world                The world to sync
      * @param backend              The storage backend to poll
@@ -47,7 +51,20 @@ public class PollingSync {
     public PollingSync(World world, StorageBackend backend, int pollIntervalSeconds) {
         this.world = world;
         this.backend = backend;
-        this.pollIntervalSeconds = Math.max(1, pollIntervalSeconds);  // Minimum 1 second
+
+        // Validate poll interval (1-300 seconds)
+        int validatedInterval = pollIntervalSeconds;
+        if (pollIntervalSeconds < 1) {
+            Debugger.log("[PollingSync] WARNING: Poll interval too low (" + pollIntervalSeconds +
+                    " seconds), using minimum of 1 second");
+            validatedInterval = 1;
+        } else if (pollIntervalSeconds > 300) {
+            Debugger.log("[PollingSync] WARNING: Poll interval too high (" + pollIntervalSeconds +
+                    " seconds), using maximum of 300 seconds (5 minutes)");
+            validatedInterval = 300;
+        }
+
+        this.pollIntervalSeconds = validatedInterval;
         this.scheduler = Executors.newSingleThreadScheduledExecutor(new PollingThreadFactory());
         this.lastPollTimestamp = System.currentTimeMillis();
     }

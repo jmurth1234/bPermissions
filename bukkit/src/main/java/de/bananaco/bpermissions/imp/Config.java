@@ -84,12 +84,16 @@ public class Config {
             config.set("storage.mongodb.connection-string", "mongodb://localhost:27017");
             config.set("storage.mongodb.database", "bpermissions");
             config.set("storage.mongodb.server-id", "server-1");
+            config.set("storage.mongodb.max-pool-size", 10);
+            config.set("storage.mongodb.min-idle", 2);
             config.set("storage.mysql.host", "localhost");
             config.set("storage.mysql.port", 3306);
             config.set("storage.mysql.database", "bpermissions");
             config.set("storage.mysql.username", "root");
             config.set("storage.mysql.password", "password");
             config.set("storage.mysql.server-id", "server-1");
+            config.set("storage.mysql.max-pool-size", 10);
+            config.set("storage.mysql.min-idle", 2);
             storageSection = config.getConfigurationSection("storage");
         }
 
@@ -103,6 +107,8 @@ public class Config {
             mongoConfig.put("connection-string", mongoSection.getString("connection-string", "mongodb://localhost:27017"));
             mongoConfig.put("database", mongoSection.getString("database", "bpermissions"));
             mongoConfig.put("server-id", mongoSection.getString("server-id", "server-1"));
+            mongoConfig.put("max-pool-size", mongoSection.getInt("max-pool-size", 10));
+            mongoConfig.put("min-idle", mongoSection.getInt("min-idle", 2));
         }
 
         // Load MySQL configuration
@@ -114,6 +120,8 @@ public class Config {
             mysqlConfig.put("username", mysqlSection.getString("username", "root"));
             mysqlConfig.put("password", mysqlSection.getString("password", "password"));
             mysqlConfig.put("server-id", mysqlSection.getString("server-id", "server-1"));
+            mysqlConfig.put("max-pool-size", mysqlSection.getInt("max-pool-size", 10));
+            mysqlConfig.put("min-idle", mysqlSection.getInt("min-idle", 2));
         }
 
         // Then set the worldmanager

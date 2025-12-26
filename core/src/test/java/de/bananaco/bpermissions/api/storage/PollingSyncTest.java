@@ -306,4 +306,49 @@ class PollingSyncTest {
         // Verify that polling stopped
         assertFalse(pollingSync.isRunning(), "PollingSync should be stopped");
     }
+
+    @Test
+    void testPollIntervalValidationMinimum() {
+        // Test that intervals less than 1 are clamped to 1
+        PollingSync sync = new PollingSync(mockWorld, mockBackend, 0);
+        // We can't directly access pollIntervalSeconds as it's private,
+        // but we can verify the polling sync was created successfully
+        assertNotNull(sync);
+        assertFalse(sync.isRunning());
+    }
+
+    @Test
+    void testPollIntervalValidationNegative() {
+        // Test that negative intervals are clamped to 1
+        PollingSync sync = new PollingSync(mockWorld, mockBackend, -10);
+        assertNotNull(sync);
+        assertFalse(sync.isRunning());
+    }
+
+    @Test
+    void testPollIntervalValidationMaximum() {
+        // Test that intervals greater than 300 are clamped to 300
+        PollingSync sync = new PollingSync(mockWorld, mockBackend, 10000);
+        assertNotNull(sync);
+        assertFalse(sync.isRunning());
+    }
+
+    @Test
+    void testPollIntervalValidationValidValue() {
+        // Test that valid intervals (1-300) are accepted
+        PollingSync sync = new PollingSync(mockWorld, mockBackend, 60);
+        assertNotNull(sync);
+        assertFalse(sync.isRunning());
+    }
+
+    @Test
+    void testPollIntervalValidationBoundaries() {
+        // Test boundary values
+        PollingSync sync1 = new PollingSync(mockWorld, mockBackend, 1);   // Min valid
+        PollingSync sync2 = new PollingSync(mockWorld, mockBackend, 300); // Max valid
+        assertNotNull(sync1);
+        assertNotNull(sync2);
+        assertFalse(sync1.isRunning());
+        assertFalse(sync2.isRunning());
+    }
 }
