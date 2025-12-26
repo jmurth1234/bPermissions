@@ -1,8 +1,9 @@
 package de.bananaco.bpermissions.imp;
 
-import java.io.File;
 import java.util.Map;
 
+import de.bananaco.bpermissions.api.storage.StorageException;
+import de.bananaco.bpermissions.imp.storage.WorldFactory;
 import de.bananaco.bpermissions.util.Debugger;
 import org.bukkit.Bukkit;
 import org.bukkit.World;
@@ -13,22 +14,26 @@ import org.bukkit.event.world.WorldInitEvent;
 import de.bananaco.bpermissions.api.WorldManager;
 
 /**
- * This class should handle the world mirroring as well as the world loading.
- *
- * Currently YamlWorld is hardcoded, but support for other types will be added
- * at some point.
- *
- * (again, in this classfile, it can be passed through a constructor argument)
+ * This class handles world mirroring and world loading.
+ * <p>
+ * World instances are created using a {@link WorldFactory} which determines
+ * the appropriate World implementation (YamlWorld, DatabaseWorld) based on
+ * the storage backend configuration.
+ * </p>
  */
 public class WorldLoader implements Listener {
 
     private WorldManager wm = WorldManager.getInstance();
     private Map<String, String> mirrors;
     private Permissions permissions;
+    private WorldFactory worldFactory;
 
-    protected WorldLoader(Permissions permissions, Map<String, String> mirrors) {
+    protected WorldLoader(Permissions permissions, Map<String, String> mirrors, WorldFactory worldFactory) {
         this.mirrors = mirrors;
         this.permissions = permissions;
+        this.worldFactory = worldFactory;
+
+        // Load all existing worlds
         for (World world : Bukkit.getServer().getWorlds()) {
             createWorld(world);
         }
@@ -40,12 +45,20 @@ public class WorldLoader implements Listener {
     }
 
     public void createWorld(World w) {
-        // TODO this is probably going to be an issue
-        String world = w.getName().toLowerCase();
+        String worldName = w.getName().toLowerCase();
 
-        if (!mirrors.containsKey(world)) {
+        // Skip mirrored worlds
+        if (!mirrors.containsKey(worldName)) {
             Debugger.log("Loading world: " + w.getName());
-            wm.createWorld(world, new YamlWorld(world, permissions, new File("plugins/bPermissions/" + world + "/")));
+
+            try {
+                // Create world using the factory (respects storage backend config)
+                de.bananaco.bpermissions.api.World bpWorld = worldFactory.createWorld(worldName);
+                wm.createWorld(worldName, bpWorld);
+            } catch (StorageException e) {
+                permissions.getLogger().severe("Failed to create world " + worldName + ": " + e.getMessage());
+                e.printStackTrace();
+            }
         }
     }
 }
