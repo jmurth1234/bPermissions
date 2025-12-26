@@ -51,6 +51,9 @@ public class MySQLBackend implements StorageBackend {
     private int maxPoolSize = 10;  // Default: suitable for single server
     private int minIdle = 2;       // Default: minimum idle connections
 
+    // Transaction support - per-thread transaction connection
+    private final ThreadLocal<Connection> transactionConnection = new ThreadLocal<>();
+
     // Type tokens for Gson deserialization
     private static final Type LIST_STRING_TYPE = new TypeToken<List<String>>() {}.getType();
     private static final Type MAP_STRING_STRING_TYPE = new TypeToken<Map<String, String>>() {}.getType();
@@ -251,8 +254,117 @@ public class MySQLBackend implements StorageBackend {
         T execute() throws SQLException;
     }
 
+    // ========== Transaction Support ==========
+
+    /**
+     * Wrapper for Connection that only closes if not in a transaction.
+     * This allows using try-with-resources while respecting transaction boundaries.
+     */
+    private class TransactionAwareConnection implements AutoCloseable {
+        private final Connection connection;
+        private final boolean isTransactionConnection;
+
+        public TransactionAwareConnection() throws SQLException {
+            Connection txConn = transactionConnection.get();
+            if (txConn != null) {
+                this.connection = txConn;
+                this.isTransactionConnection = true;
+            } else {
+                this.connection = dataSource.getConnection();
+                this.isTransactionConnection = false;
+            }
+        }
+
+        public Connection get() {
+            return connection;
+        }
+
+        @Override
+        public void close() throws SQLException {
+            // Only close if this is NOT a transaction connection
+            // Transaction connections are managed by commit/rollback
+            if (!isTransactionConnection) {
+                connection.close();
+            }
+        }
+    }
+
+    @Override
+    public void beginTransaction() throws StorageException {
+        if (transactionConnection.get() != null) {
+            throw new StorageException("Transaction already active on this thread");
+        }
+
+        try {
+            Connection conn = dataSource.getConnection();
+            conn.setAutoCommit(false);
+            transactionConnection.set(conn);
+            Debugger.log("[MySQLBackend] Transaction started on thread " + Thread.currentThread().getName());
+        } catch (SQLException e) {
+            throw new StorageException("Failed to begin transaction", e);
+        }
+    }
+
+    @Override
+    public void commitTransaction() throws StorageException {
+        Connection conn = transactionConnection.get();
+        if (conn == null) {
+            throw new StorageException("No active transaction to commit");
+        }
+
+        try {
+            conn.commit();
+            Debugger.log("[MySQLBackend] Transaction committed on thread " + Thread.currentThread().getName());
+        } catch (SQLException e) {
+            throw new StorageException("Failed to commit transaction", e);
+        } finally {
+            try {
+                conn.setAutoCommit(true);
+                conn.close();
+            } catch (SQLException e) {
+                Debugger.log("[MySQLBackend] Error cleaning up transaction connection: " + e.getMessage());
+            }
+            transactionConnection.remove();
+        }
+    }
+
+    @Override
+    public void rollbackTransaction() throws StorageException {
+        Connection conn = transactionConnection.get();
+        if (conn == null) {
+            throw new StorageException("No active transaction to rollback");
+        }
+
+        try {
+            conn.rollback();
+            Debugger.log("[MySQLBackend] Transaction rolled back on thread " + Thread.currentThread().getName());
+        } catch (SQLException e) {
+            throw new StorageException("Failed to rollback transaction", e);
+        } finally {
+            try {
+                conn.setAutoCommit(true);
+                conn.close();
+            } catch (SQLException e) {
+                Debugger.log("[MySQLBackend] Error cleaning up transaction connection: " + e.getMessage());
+            }
+            transactionConnection.remove();
+        }
+    }
+
     @Override
     public void shutdown() throws StorageException {
+        // Clean up any lingering transaction connections
+        Connection txConn = transactionConnection.get();
+        if (txConn != null) {
+            try {
+                txConn.rollback();
+                txConn.close();
+            } catch (SQLException e) {
+                Debugger.log("[MySQLBackend] Error cleaning up transaction during shutdown: " + e.getMessage());
+            }
+            transactionConnection.remove();
+        }
+
         try {
             if (dataSource != null && !dataSource.isClosed()) {
                 dataSource.close();
@@ -285,7 +397,8 @@ public class MySQLBackend implements StorageBackend {
      * </p>
      */
     private void createTables() throws SQLException {
-        try (Connection conn = dataSource.getConnection()) {
+        try (TransactionAwareConnection txConn = new TransactionAwareConnection()) {
+            Connection conn = txConn.get();
             createUsersTable(conn);
             createGroupsTable(conn);
             createWorldsTable(conn);
@@ -385,8 +498,8 @@ public class MySQLBackend implements StorageBackend {
         return executeWithRetry(() -> {
             String sql = "SELECT * FROM permissions_users WHERE uuid = ? AND world = ?";
 
-            try (Connection conn = dataSource.getConnection();
-                 PreparedStatement stmt = conn.prepareStatement(sql)) {
+            try (TransactionAwareConnection txConn = new TransactionAwareConnection();
+                 PreparedStatement stmt = txConn.get().prepareStatement(sql)) {
 
                 stmt.setString(1, uuid);
                 stmt.setString(2, worldName);
@@ -415,8 +528,8 @@ public class MySQLBackend implements StorageBackend {
                     "metadata = VALUES(metadata), " +
                     "last_modified = VALUES(last_modified)";
 
-            try (Connection conn = dataSource.getConnection();
-                 PreparedStatement stmt = conn.prepareStatement(sql)) {
+            try (TransactionAwareConnection txConn = new TransactionAwareConnection();
+                 PreparedStatement stmt = txConn.get().prepareStatement(sql)) {
 
                 String id = buildUserId(userData.getUuid(), worldName);
                 stmt.setString(1, id);
@@ -445,8 +558,8 @@ public class MySQLBackend implements StorageBackend {
         return executeWithRetry(() -> {
             String sql = "SELECT COUNT(*) FROM permissions_users WHERE uuid = ? AND world = ?";
 
-            try (Connection conn = dataSource.getConnection();
-                 PreparedStatement stmt = conn.prepareStatement(sql)) {
+            try (TransactionAwareConnection txConn = new TransactionAwareConnection();
+                 PreparedStatement stmt = txConn.get().prepareStatement(sql)) {
 
                 stmt.setString(1, uuid);
                 stmt.setString(2, worldName);
@@ -463,8 +576,8 @@ public class MySQLBackend implements StorageBackend {
             String sql = "SELECT uuid FROM permissions_users WHERE world = ?";
             Set<String> uuids = new HashSet<>();
 
-            try (Connection conn = dataSource.getConnection();
-                 PreparedStatement stmt = conn.prepareStatement(sql)) {
+            try (TransactionAwareConnection txConn = new TransactionAwareConnection();
+                 PreparedStatement stmt = txConn.get().prepareStatement(sql)) {
 
                 stmt.setString(1, worldName);
                 ResultSet rs = stmt.executeQuery();
@@ -483,8 +596,8 @@ public class MySQLBackend implements StorageBackend {
         executeWithRetry(() -> {
             String sql = "DELETE FROM permissions_users WHERE uuid = ? AND world = ?";
 
-            try (Connection conn = dataSource.getConnection();
-                 PreparedStatement stmt = conn.prepareStatement(sql)) {
+            try (TransactionAwareConnection txConn = new TransactionAwareConnection();
+                 PreparedStatement stmt = txConn.get().prepareStatement(sql)) {
 
                 stmt.setString(1, uuid);
                 stmt.setString(2, worldName);
@@ -507,8 +620,8 @@ public class MySQLBackend implements StorageBackend {
         return executeWithRetry(() -> {
             String sql = "SELECT * FROM permissions_groups WHERE name = ? AND world = ?";
 
-            try (Connection conn = dataSource.getConnection();
-                 PreparedStatement stmt = conn.prepareStatement(sql)) {
+            try (TransactionAwareConnection txConn = new TransactionAwareConnection();
+                 PreparedStatement stmt = txConn.get().prepareStatement(sql)) {
 
                 stmt.setString(1, groupName);
                 stmt.setString(2, worldName);
@@ -536,8 +649,8 @@ public class MySQLBackend implements StorageBackend {
                     "metadata = VALUES(metadata), " +
                     "last_modified = VALUES(last_modified)";
 
-            try (Connection conn = dataSource.getConnection();
-                 PreparedStatement stmt = conn.prepareStatement(sql)) {
+            try (TransactionAwareConnection txConn = new TransactionAwareConnection();
+                 PreparedStatement stmt = txConn.get().prepareStatement(sql)) {
 
                 String id = buildGroupId(groupData.getName(), worldName);
                 stmt.setString(1, id);
@@ -565,8 +678,8 @@ public class MySQLBackend implements StorageBackend {
         return executeWithRetry(() -> {
             String sql = "SELECT COUNT(*) FROM permissions_groups WHERE name = ? AND world = ?";
 
-            try (Connection conn = dataSource.getConnection();
-                 PreparedStatement stmt = conn.prepareStatement(sql)) {
+            try (TransactionAwareConnection txConn = new TransactionAwareConnection();
+                 PreparedStatement stmt = txConn.get().prepareStatement(sql)) {
 
                 stmt.setString(1, groupName);
                 stmt.setString(2, worldName);
@@ -583,8 +696,8 @@ public class MySQLBackend implements StorageBackend {
             String sql = "SELECT name FROM permissions_groups WHERE world = ?";
             Set<String> groupNames = new HashSet<>();
 
-            try (Connection conn = dataSource.getConnection();
-                 PreparedStatement stmt = conn.prepareStatement(sql)) {
+            try (TransactionAwareConnection txConn = new TransactionAwareConnection();
+                 PreparedStatement stmt = txConn.get().prepareStatement(sql)) {
 
                 stmt.setString(1, worldName);
                 ResultSet rs = stmt.executeQuery();
@@ -603,8 +716,8 @@ public class MySQLBackend implements StorageBackend {
         executeWithRetry(() -> {
             String sql = "DELETE FROM permissions_groups WHERE name = ? AND world = ?";
 
-            try (Connection conn = dataSource.getConnection();
-                 PreparedStatement stmt = conn.prepareStatement(sql)) {
+            try (TransactionAwareConnection txConn = new TransactionAwareConnection();
+                 PreparedStatement stmt = txConn.get().prepareStatement(sql)) {
 
                 stmt.setString(1, groupName);
                 stmt.setString(2, worldName);
@@ -627,8 +740,8 @@ public class MySQLBackend implements StorageBackend {
         return executeWithRetry(() -> {
             String sql = "SELECT * FROM permissions_worlds WHERE world = ?";
 
-            try (Connection conn = dataSource.getConnection();
-                 PreparedStatement stmt = conn.prepareStatement(sql)) {
+            try (TransactionAwareConnection txConn = new TransactionAwareConnection();
+                 PreparedStatement stmt = txConn.get().prepareStatement(sql)) {
 
                 stmt.setString(1, worldName);
                 ResultSet rs = stmt.executeQuery();
@@ -654,8 +767,8 @@ public class MySQLBackend implements StorageBackend {
                     "last_modified = VALUES(last_modified), " +
                     "custom_settings = VALUES(custom_settings)";
 
-            try (Connection conn = dataSource.getConnection();
-                 PreparedStatement stmt = conn.prepareStatement(sql)) {
+            try (TransactionAwareConnection txConn = new TransactionAwareConnection();
+                 PreparedStatement stmt = txConn.get().prepareStatement(sql)) {
 
                 stmt.setString(1, worldName);
                 stmt.setString(2, metadata.getDefaultGroup());
@@ -682,8 +795,8 @@ public class MySQLBackend implements StorageBackend {
 
             Set<ChangeRecord> changes = new HashSet<>();
 
-            try (Connection conn = dataSource.getConnection();
-                 PreparedStatement stmt = conn.prepareStatement(sql)) {
+            try (TransactionAwareConnection txConn = new TransactionAwareConnection();
+                 PreparedStatement stmt = txConn.get().prepareStatement(sql)) {
 
                 stmt.setString(1, worldName);
                 stmt.setLong(2, timestamp);
@@ -704,8 +817,8 @@ public class MySQLBackend implements StorageBackend {
         return executeWithRetry(() -> {
             String sql = "SELECT MAX(timestamp) FROM permissions_changelog WHERE world = ?";
 
-            try (Connection conn = dataSource.getConnection();
-                 PreparedStatement stmt = conn.prepareStatement(sql)) {
+            try (TransactionAwareConnection txConn = new TransactionAwareConnection();
+                 PreparedStatement stmt = txConn.get().prepareStatement(sql)) {
 
                 stmt.setString(1, worldName);
                 ResultSet rs = stmt.executeQuery();
@@ -726,8 +839,8 @@ public class MySQLBackend implements StorageBackend {
             String sql = "SELECT * FROM permissions_users WHERE world = ?";
             Map<String, UserData> users = new HashMap<>();
 
-            try (Connection conn = dataSource.getConnection();
-                 PreparedStatement stmt = conn.prepareStatement(sql)) {
+            try (TransactionAwareConnection txConn = new TransactionAwareConnection();
+                 PreparedStatement stmt = txConn.get().prepareStatement(sql)) {
 
                 stmt.setString(1, worldName);
                 ResultSet rs = stmt.executeQuery();
@@ -749,8 +862,8 @@ public class MySQLBackend implements StorageBackend {
             String sql = "SELECT * FROM permissions_groups WHERE world = ?";
             Map<String, GroupData> groups = new HashMap<>();
 
-            try (Connection conn = dataSource.getConnection();
-                 PreparedStatement stmt = conn.prepareStatement(sql)) {
+            try (TransactionAwareConnection txConn = new TransactionAwareConnection();
+                 PreparedStatement stmt = txConn.get().prepareStatement(sql)) {
 
                 stmt.setString(1, worldName);
                 ResultSet rs = stmt.executeQuery();
@@ -780,8 +893,8 @@ public class MySQLBackend implements StorageBackend {
         String sql = "INSERT INTO permissions_changelog (world, calculable_type, calculable_name, change_type, timestamp, server_source) " +
                 "VALUES (?, ?, ?, ?, ?, ?)";
 
-        try (Connection conn = dataSource.getConnection();
-             PreparedStatement stmt = conn.prepareStatement(sql)) {
+        try (TransactionAwareConnection txConn = new TransactionAwareConnection();
+             PreparedStatement stmt = txConn.get().prepareStatement(sql)) {
 
             stmt.setString(1, worldName);
             stmt.setString(2, type.name());
@@ -795,6 +908,113 @@ public class MySQLBackend implements StorageBackend {
         } catch (SQLException e) {
             Debugger.log("[MySQLBackend] Warning: Failed to log change: " + e.getMessage());
         }
+    }
+
+    // ========== Changelog Management ==========
+
+    @Override
+    public int deleteChangelogBefore(long timestamp, String worldName) throws StorageException {
+        return executeWithRetry(() -> {
+            String sql;
+            if (worldName == null) {
+                sql = "DELETE FROM permissions_changelog WHERE timestamp < ?";
+            } else {
+                sql = "DELETE FROM permissions_changelog WHERE timestamp < ? AND world = ?";
+            }
+
+            try (TransactionAwareConnection txConn = new TransactionAwareConnection();
+                 PreparedStatement stmt = txConn.get().prepareStatement(sql)) {
+
+                stmt.setLong(1, timestamp);
+                if (worldName != null) {
+                    stmt.setString(2, worldName);
+                }
+
+                int deletedRows = stmt.executeUpdate();
+                Debugger.log("[MySQLBackend] Deleted " + deletedRows + " changelog entries older than " + timestamp +
+                        (worldName != null ? " for world " + worldName : " (all worlds)"));
+
+                return deletedRows;
+            }
+        });
+    }
+
+    @Override
+    public int deleteAllChangelog(String worldName) throws StorageException {
+        return executeWithRetry(() -> {
+            String sql;
+            if (worldName == null) {
+                sql = "DELETE FROM permissions_changelog";
+            } else {
+                sql = "DELETE FROM permissions_changelog WHERE world = ?";
+            }
+
+            try (TransactionAwareConnection txConn = new TransactionAwareConnection();
+                 PreparedStatement stmt = txConn.get().prepareStatement(sql)) {
+
+                if (worldName != null) {
+                    stmt.setString(1, worldName);
+                }
+
+                int deletedRows = stmt.executeUpdate();
+                Debugger.log("[MySQLBackend] Deleted ALL " + deletedRows + " changelog entries" +
+                        (worldName != null ? " for world " + worldName : " (all worlds)"));
+
+                return deletedRows;
+            }
+        });
+    }
+
+    @Override
+    public long getChangelogCount(String worldName) throws StorageException {
+        return executeWithRetry(() -> {
+            String sql;
+            if (worldName == null) {
+                sql = "SELECT COUNT(*) FROM permissions_changelog";
+            } else {
+                sql = "SELECT COUNT(*) FROM permissions_changelog WHERE world = ?";
+            }
+
+            try (TransactionAwareConnection txConn = new TransactionAwareConnection();
+                 PreparedStatement stmt = txConn.get().prepareStatement(sql)) {
+
+                if (worldName != null) {
+                    stmt.setString(1, worldName);
+                }
+
+                ResultSet rs = stmt.executeQuery();
+                if (rs.next()) {
+                    return rs.getLong(1);
+                }
+                return 0L;
+            }
+        });
+    }
+
+    @Override
+    public long getOldestChangelogTimestamp(String worldName) throws StorageException {
+        return executeWithRetry(() -> {
+            String sql;
+            if (worldName == null) {
+                sql = "SELECT MIN(timestamp) FROM permissions_changelog";
+            } else {
+                sql = "SELECT MIN(timestamp) FROM permissions_changelog WHERE world = ?";
+            }
+
+            try (TransactionAwareConnection txConn = new TransactionAwareConnection();
+                 PreparedStatement stmt = txConn.get().prepareStatement(sql)) {
+
+                if (worldName != null) {
+                    stmt.setString(1, worldName);
+                }
+
+                ResultSet rs = stmt.executeQuery();
+                if (rs.next()) {
+                    return rs.getLong(1);
+                }
+                return 0L;
+            }
+        });
     }
 
     // ========== Conversion Methods: ResultSet <-> DTO ==========

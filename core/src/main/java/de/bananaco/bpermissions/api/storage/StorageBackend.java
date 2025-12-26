@@ -308,4 +308,69 @@ public interface StorageBackend {
     default void rollbackTransaction() throws StorageException {
         // No-op by default
     }
+
+    // ========== Changelog Management (optional) ==========
+
+    /**
+     * Delete all changelog entries older than the specified timestamp.
+     * <p>
+     * This is useful for cleaning up old changelog entries to prevent unbounded
+     * table growth.
+     * </p>
+     *
+     * @param timestamp  Unix timestamp (milliseconds) - entries older than this will be deleted
+     * @param worldName  The world name (null to delete from all worlds)
+     * @return Number of entries deleted
+     * @throws StorageException if the deletion fails
+     */
+    default int deleteChangelogBefore(long timestamp, String worldName) throws StorageException {
+        // No-op by default - backends without changelog can ignore this
+        return 0;
+    }
+
+    /**
+     * Delete all changelog entries for a specific world.
+     * <p>
+     * <b>Warning:</b> This deletes ALL changelog entries for the world, including recent ones.
+     * Use with caution!
+     * </p>
+     *
+     * @param worldName The world name (null to delete all changelog entries)
+     * @return Number of entries deleted
+     * @throws StorageException if the deletion fails
+     */
+    default int deleteAllChangelog(String worldName) throws StorageException {
+        // No-op by default
+        return 0;
+    }
+
+    /**
+     * Get the count of changelog entries for a world.
+     * <p>
+     * Useful for monitoring changelog table size.
+     * </p>
+     *
+     * @param worldName The world name (null for total count across all worlds)
+     * @return Number of changelog entries
+     * @throws StorageException if the query fails
+     */
+    default long getChangelogCount(String worldName) throws StorageException {
+        // No-op by default
+        return 0;
+    }
+
+    /**
+     * Get the oldest changelog entry timestamp for a world.
+     * <p>
+     * Useful for determining how far back changelog history goes.
+     * </p>
+     *
+     * @param worldName The world name (null for oldest across all worlds)
+     * @return Unix timestamp (milliseconds) of oldest entry, or 0 if no entries exist
+     * @throws StorageException if the query fails
+     */
+    default long getOldestChangelogTimestamp(String worldName) throws StorageException {
+        // No-op by default
+        return 0;
+    }
 }

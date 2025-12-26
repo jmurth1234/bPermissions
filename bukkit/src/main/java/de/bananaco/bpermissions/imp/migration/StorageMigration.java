@@ -50,21 +50,41 @@ public class StorageMigration {
         int groupsMigrated = 0;
         int usersMigrated = 0;
 
+        // Use transactions for atomic migration
         try {
-            // Migrate world metadata first
-            migrateWorldMetadata(sourceWorld, targetBackend);
+            targetBackend.beginTransaction();
+            Debugger.log("[StorageMigration] Started transaction for world '" + worldName + "'");
 
-            // Migrate groups first (users depend on groups)
-            groupsMigrated = migrateGroups(sourceWorld, targetBackend);
+            try {
+                // Migrate world metadata first
+                migrateWorldMetadata(sourceWorld, targetBackend);
 
-            // Migrate users
-            usersMigrated = migrateUsers(sourceWorld, targetBackend);
+                // Migrate groups first (users depend on groups)
+                groupsMigrated = migrateGroups(sourceWorld, targetBackend);
 
-            Debugger.log("[StorageMigration] Migration complete: " + groupsMigrated + " groups, " +
-                    usersMigrated + " users migrated for world '" + worldName + "'");
+                // Migrate users
+                usersMigrated = migrateUsers(sourceWorld, targetBackend);
 
-            Bukkit.getLogger().info("[bPermissions] Successfully migrated world '" + worldName + "' to database (" +
-                    groupsMigrated + " groups, " + usersMigrated + " users)");
+                // Commit transaction
+                targetBackend.commitTransaction();
+                Debugger.log("[StorageMigration] Committed transaction for world '" + worldName + "'");
+
+                Debugger.log("[StorageMigration] Migration complete: " + groupsMigrated + " groups, " +
+                        usersMigrated + " users migrated for world '" + worldName + "'");
+
+                Bukkit.getLogger().info("[bPermissions] Successfully migrated world '" + worldName + "' to database (" +
+                        groupsMigrated + " groups, " + usersMigrated + " users)");
+
+            } catch (StorageException e) {
+                // Rollback transaction on error
+                try {
+                    targetBackend.rollbackTransaction();
+                    Debugger.log("[StorageMigration] Rolled back transaction for world '" + worldName + "' due to error");
+                } catch (StorageException rollbackError) {
+                    Debugger.log("[StorageMigration] Error during rollback: " + rollbackError.getMessage());
+                }
+                throw e;
+            }
 
         } catch (StorageException e) {
             Debugger.log("[StorageMigration] Migration failed for world '" + worldName + "': " + e.getMessage());

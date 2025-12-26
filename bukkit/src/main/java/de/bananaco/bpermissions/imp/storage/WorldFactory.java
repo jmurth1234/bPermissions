@@ -89,7 +89,7 @@ public class WorldFactory {
             Debugger.log("[WorldFactory] Initialized shared MongoDB backend");
         }
 
-        return new DatabaseWorld(worldName, permissions, backend, config.getPollInterval());
+        return new DatabaseWorld(worldName, permissions, backend, config.getPollInterval(), config.getChangelogRetentionDays());
     }
 
     /**
@@ -105,7 +105,7 @@ public class WorldFactory {
             Debugger.log("[WorldFactory] Initialized shared MySQL backend");
         }
 
-        return new DatabaseWorld(worldName, permissions, backend, config.getPollInterval());
+        return new DatabaseWorld(worldName, permissions, backend, config.getPollInterval(), config.getChangelogRetentionDays());
     }
 
     /**

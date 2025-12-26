@@ -610,6 +610,72 @@ public class MongoBackend implements StorageBackend {
         }
     }
 
+    // ========== Changelog Management ==========
+
+    @Override
+    public int deleteChangelogBefore(long timestamp, String worldName) throws StorageException {
+        return executeWithRetry(() -> {
+            Document filter;
+            if (worldName == null) {
+                filter = new Document("timestamp", new Document("$lt", timestamp));
+            } else {
+                filter = new Document("timestamp", new Document("$lt", timestamp))
+                        .append("world", worldName);
+            }
+
+            long deletedCount = changelogCollection.deleteMany(filter).getDeletedCount();
+            Debugger.log("[MongoBackend] Deleted " + deletedCount + " changelog entries older than " + timestamp +
+                    (worldName != null ? " for world " + worldName : " (all worlds)"));
+
+            return (int) deletedCount;
+        });
+    }
+
+    @Override
+    public int deleteAllChangelog(String worldName) throws StorageException {
+        return executeWithRetry(() -> {
+            long deletedCount;
+            if (worldName == null) {
+                deletedCount = changelogCollection.deleteMany(new Document()).getDeletedCount();
+            } else {
+                deletedCount = changelogCollection.deleteMany(new Document("world", worldName)).getDeletedCount();
+            }
+
+            Debugger.log("[MongoBackend] Deleted ALL " + deletedCount + " changelog entries" +
+                    (worldName != null ? " for world " + worldName : " (all worlds)"));
+
+            return (int) deletedCount;
+        });
+    }
+
+    @Override
+    public long getChangelogCount(String worldName) throws StorageException {
+        return executeWithRetry(() -> {
+            if (worldName == null) {
+                return changelogCollection.countDocuments();
+            } else {
+                return changelogCollection.countDocuments(new Document("world", worldName));
+            }
+        });
+    }
+
+    @Override
+    public long getOldestChangelogTimestamp(String worldName) throws StorageException {
+        return executeWithRetry(() -> {
+            Document filter = worldName == null ? new Document() : new Document("world", worldName);
+            Document oldest = changelogCollection
+                    .find(filter)
+                    .sort(new Document("timestamp", 1))
+                    .limit(1)
+                    .first();
+
+            if (oldest != null) {
+                return oldest.getLong("timestamp");
+            }
+            return 0L;
+        });
+    }
+
     // ========== Conversion Methods: Document <-> DTO ==========
 
     private UserData documentToUserData(Document doc) {

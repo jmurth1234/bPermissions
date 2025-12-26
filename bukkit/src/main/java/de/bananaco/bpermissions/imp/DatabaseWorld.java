@@ -36,6 +36,7 @@ public class DatabaseWorld extends World {
     private final Permissions permissions;
     private final WorldManager wm = WorldManager.getInstance();
     private final PollingSync pollingSync;
+    private final int changelogRetentionDays;
 
     private String defaultGroup = "default";
     private boolean error = false;
@@ -43,16 +44,18 @@ public class DatabaseWorld extends World {
     /**
      * Create a new DatabaseWorld.
      *
-     * @param worldName      The world name
-     * @param permissions    The Permissions plugin instance
-     * @param backend        The storage backend to use
-     * @param pollInterval   Polling interval in seconds for change detection
+     * @param worldName                 The world name
+     * @param permissions               The Permissions plugin instance
+     * @param backend                   The storage backend to use
+     * @param pollInterval              Polling interval in seconds for change detection
+     * @param changelogRetentionDays    Number of days to retain changelog entries (0 = disabled)
      */
-    public DatabaseWorld(String worldName, Permissions permissions, StorageBackend backend, int pollInterval) {
+    public DatabaseWorld(String worldName, Permissions permissions, StorageBackend backend, int pollInterval, int changelogRetentionDays) {
         super(worldName);
         this.permissions = permissions;
         this.backend = backend;
         this.pollingSync = new PollingSync(this, backend, pollInterval);
+        this.changelogRetentionDays = changelogRetentionDays;
     }
 
     @Override
@@ -185,6 +188,9 @@ public class DatabaseWorld extends World {
             long endTime = System.currentTimeMillis();
             Debugger.log("[DatabaseWorld] Loading " + getName() + " took " + (endTime - startTime) + "ms");
 
+            // Cleanup old changelog entries
+            cleanupOldChangelog();
+
             Bukkit.getLogger().info("[bPermissions] Permissions for world " + getName() + " has loaded from database!");
 
         } finally {
@@ -252,6 +258,44 @@ public class DatabaseWorld extends World {
         }
 
         return group;
+    }
+
+    /**
+     * Clean up old changelog entries based on configured retention period.
+     * <p>
+     * This method runs asynchronously during world load to delete changelog entries
+     * older than the configured retention period (default: 30 days).
+     * </p>
+     */
+    private void cleanupOldChangelog() {
+        try {
+            // Skip cleanup if retention is 0 or negative (disabled)
+            if (changelogRetentionDays <= 0) {
+                Debugger.log("[DatabaseWorld] Changelog cleanup disabled (retention-days=" + changelogRetentionDays + ")");
+                return;
+            }
+
+            // Calculate cutoff timestamp (current time - retention days)
+            long retentionMillis = changelogRetentionDays * 24L * 60L * 60L * 1000L;
+            long cutoffTimestamp = System.currentTimeMillis() - retentionMillis;
+
+            // Get count before cleanup for logging
+            long countBefore = backend.getChangelogCount(getName());
+
+            // Delete old entries for this world
+            int deletedCount = backend.deleteChangelogBefore(cutoffTimestamp, getName());
+
+            if (deletedCount > 0) {
+                Debugger.log("[DatabaseWorld] Cleaned up " + deletedCount + " old changelog entries for world " + getName() +
+                        " (retention: " + changelogRetentionDays + " days, " + (countBefore - deletedCount) + " entries remaining)");
+            } else {
+                Debugger.log("[DatabaseWorld] No old changelog entries to clean up for world " + getName());
+            }
+
+        } catch (StorageException e) {
+            // Log error but don't fail world load
+            Debugger.log("[DatabaseWorld] Failed to cleanup old changelog entries: " + e.getMessage());
+        }
     }
 
     @Override

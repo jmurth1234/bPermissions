@@ -27,6 +27,7 @@ public class Config {
     // Storage configuration
     private String storageBackend = "yaml";
     private int pollInterval = 5;
+    private int changelogRetentionDays = 30;
     private Map<String, Object> mongoConfig = new HashMap<>();
     private Map<String, Object> mysqlConfig = new HashMap<>();
 
@@ -100,6 +101,7 @@ public class Config {
         // Load storage backend type
         storageBackend = config.getString("storage.backend", "yaml");
         pollInterval = config.getInt("storage.poll-interval", 5);
+        changelogRetentionDays = config.getInt("storage.changelog-retention-days", 30);
 
         // Load MongoDB configuration
         ConfigurationSection mongoSection = config.getConfigurationSection("storage.mongodb");
@@ -160,6 +162,10 @@ public class Config {
 
     public int getPollInterval() {
         return pollInterval;
+    }
+
+    public int getChangelogRetentionDays() {
+        return changelogRetentionDays;
     }
 
     public Map<String, Object> getMongoConfig() {
