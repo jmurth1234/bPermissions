@@ -208,23 +208,25 @@ public class MySQLBackend implements StorageBackend {
     /**
      * Execute a database operation with automatic retry on connection failure.
      * <p>
-     * This method wraps database operations and automatically retries once
-     * after attempting to reconnect if a connection error is detected.
+     * This method wraps database operations and automatically retries up to
+     * maxReconnectAttempts times after attempting to reconnect if a connection
+     * error is detected.
      * </p>
      *
      * @param operation The database operation to execute
      * @param <T> The return type of the operation
      * @return The result of the operation
-     * @throws StorageException if the operation fails (even after retry)
+     * @throws StorageException if the operation fails (even after retries)
      */
     private <T> T executeWithRetry(DatabaseOperation<T> operation) throws StorageException {
-        for (int attempt = 0; attempt <= 1; attempt++) {
+        for (int attempt = 0; attempt <= maxReconnectAttempts; attempt++) {
             try {
                 return operation.execute();
             } catch (SQLException e) {
-                // Only retry on first attempt and if it's a connection error
-                if (attempt == 0 && shouldRetryOnError(e)) {
-                    Debugger.log("[MySQLBackend] Connection error detected, attempting reconnection...");
+                // Only retry if not the last attempt and it's a connection error
+                if (attempt < maxReconnectAttempts && shouldRetryOnError(e)) {
+                    Debugger.log("[MySQLBackend] Connection error detected (attempt " + (attempt + 1) +
+                            "/" + maxReconnectAttempts + "), attempting reconnection...");
                     if (reconnect()) {
                         Debugger.log("[MySQLBackend] Reconnected, retrying operation...");
                         continue; // Retry the operation
@@ -232,12 +234,13 @@ public class MySQLBackend implements StorageBackend {
                         Debugger.log("[MySQLBackend] Reconnection failed");
                     }
                 }
-                // Either not a connection error, or retry failed
-                throw new StorageException.ConnectionFailedException("Database operation failed", e);
+                // Either not a connection error, out of retries, or reconnect failed
+                throw new StorageException.ConnectionFailedException("Database operation failed after " +
+                        (attempt + 1) + " attempt(s)", e);
             }
         }
         // Should never reach here, but satisfy compiler
-        throw new StorageException("Database operation failed after retry");
+        throw new StorageException("Database operation failed after " + maxReconnectAttempts + " retry attempts");
     }
 
     /**

@@ -205,23 +205,25 @@ public class MongoBackend implements StorageBackend {
     /**
      * Execute a MongoDB operation with automatic retry on connection failure.
      * <p>
-     * This method wraps MongoDB operations and automatically retries once
-     * after attempting to reconnect if a connection error is detected.
+     * This method wraps MongoDB operations and automatically retries up to
+     * maxReconnectAttempts times after attempting to reconnect if a connection
+     * error is detected.
      * </p>
      *
      * @param operation The MongoDB operation to execute
      * @param <T> The return type of the operation
      * @return The result of the operation
-     * @throws StorageException if the operation fails (even after retry)
+     * @throws StorageException if the operation fails (even after retries)
      */
     private <T> T executeWithRetry(MongoOperation<T> operation) throws StorageException {
-        for (int attempt = 0; attempt <= 1; attempt++) {
+        for (int attempt = 0; attempt <= maxReconnectAttempts; attempt++) {
             try {
                 return operation.execute();
             } catch (MongoException e) {
-                // Only retry on first attempt and if it's a connection error
-                if (attempt == 0 && shouldRetryOnError(e)) {
-                    Debugger.log("[MongoBackend] Connection error detected, attempting reconnection...");
+                // Only retry if not the last attempt and it's a connection error
+                if (attempt < maxReconnectAttempts && shouldRetryOnError(e)) {
+                    Debugger.log("[MongoBackend] Connection error detected (attempt " + (attempt + 1) +
+                            "/" + maxReconnectAttempts + "), attempting reconnection...");
                     if (reconnect()) {
                         Debugger.log("[MongoBackend] Reconnected, retrying operation...");
                         continue; // Retry the operation
@@ -229,12 +231,13 @@ public class MongoBackend implements StorageBackend {
                         Debugger.log("[MongoBackend] Reconnection failed");
                     }
                 }
-                // Either not a connection error, or retry failed
-                throw new StorageException.ConnectionFailedException("MongoDB operation failed", e);
+                // Either not a connection error, out of retries, or reconnect failed
+                throw new StorageException.ConnectionFailedException("MongoDB operation failed after " +
+                        (attempt + 1) + " attempt(s)", e);
             }
         }
         // Should never reach here, but satisfy compiler
-        throw new StorageException("MongoDB operation failed after retry");
+        throw new StorageException("MongoDB operation failed after " + maxReconnectAttempts + " retry attempts");
     }
 
     /**
