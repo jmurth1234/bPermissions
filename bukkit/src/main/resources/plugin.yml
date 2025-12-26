@@ -35,5 +35,9 @@ commands:
   setgroup:
     description: Set a player's group!
     usage: /<command> player (group)
+  changelog:
+    aliases: [cl, chlog]
+    description: Cleanup old changelog entries
+    usage: /<command> cleanup [days] [world]
 
 

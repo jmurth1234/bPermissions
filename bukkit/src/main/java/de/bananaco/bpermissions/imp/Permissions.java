@@ -160,6 +160,10 @@ public class Permissions extends JavaPlugin {
         this.getCommand("user").setTabCompleter(tabCompleter);
         this.getCommand("setgroup").setTabCompleter(tabCompleter);
 
+        // Register changelog cleanup command
+        ChangelogCleanupCommand changelogCleanupCommand = new ChangelogCleanupCommand(this);
+        this.getCommand("changelog").setExecutor(changelogCleanupCommand);
+
         // Register loader events
         getServer().getPluginManager().registerEvents(loader, this);
         // Register handler events

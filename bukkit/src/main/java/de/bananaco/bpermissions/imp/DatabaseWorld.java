@@ -64,6 +64,18 @@ public class DatabaseWorld extends World {
         // This method exists for compatibility with the World interface
     }
 
+    /**
+     * Get the storage backend used by this world.
+     * <p>
+     * This method is useful for direct database operations like changelog cleanup.
+     * </p>
+     *
+     * @return The StorageBackend instance
+     */
+    public StorageBackend getBackend() {
+        return backend;
+    }
+
     @Override
     public String getDefaultGroup() {
         return defaultGroup;
