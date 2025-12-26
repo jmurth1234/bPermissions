@@ -456,7 +456,7 @@ public class MySQLBackend implements StorageBackend {
                             "username VARCHAR(16), " +
                             "world VARCHAR(50) NOT NULL, " +
                             "permissions TEXT, " +
-                            "groups TEXT, " +
+                            "`groups` TEXT, " +  // Backticks to escape reserved keyword
                             "metadata TEXT, " +
                             "last_modified BIGINT NOT NULL, " +
                             "INDEX idx_uuid_world (uuid, world), " +
@@ -478,7 +478,7 @@ public class MySQLBackend implements StorageBackend {
                             "name VARCHAR(50) NOT NULL, " +
                             "world VARCHAR(50) NOT NULL, " +
                             "permissions TEXT, " +
-                            "groups TEXT, " +
+                            "`groups` TEXT, " +  // Backticks to escape reserved keyword
                             "metadata TEXT, " +
                             "last_modified BIGINT NOT NULL, " +
                             "INDEX idx_name_world (name, world), " +
@@ -556,12 +556,12 @@ public class MySQLBackend implements StorageBackend {
         userData.setLastModified(System.currentTimeMillis());
 
         executeWithRetry(() -> {
-            String sql = "INSERT INTO permissions_users (id, uuid, username, world, permissions, groups, metadata, last_modified) " +
+            String sql = "INSERT INTO permissions_users (id, uuid, username, world, permissions, `groups`, metadata, last_modified) " +
                     "VALUES (?, ?, ?, ?, ?, ?, ?, ?) " +
                     "ON DUPLICATE KEY UPDATE " +
                     "username = VALUES(username), " +
                     "permissions = VALUES(permissions), " +
-                    "groups = VALUES(groups), " +
+                    "`groups` = VALUES(`groups`), " +
                     "metadata = VALUES(metadata), " +
                     "last_modified = VALUES(last_modified)";
 
@@ -678,11 +678,11 @@ public class MySQLBackend implements StorageBackend {
         groupData.setLastModified(System.currentTimeMillis());
 
         executeWithRetry(() -> {
-            String sql = "INSERT INTO permissions_groups (id, name, world, permissions, groups, metadata, last_modified) " +
+            String sql = "INSERT INTO permissions_groups (id, name, world, permissions, `groups`, metadata, last_modified) " +
                     "VALUES (?, ?, ?, ?, ?, ?, ?) " +
                     "ON DUPLICATE KEY UPDATE " +
                     "permissions = VALUES(permissions), " +
-                    "groups = VALUES(groups), " +
+                    "`groups` = VALUES(`groups`), " +
                     "metadata = VALUES(metadata), " +
                     "last_modified = VALUES(last_modified)";
 
