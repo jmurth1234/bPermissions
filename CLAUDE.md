@@ -2,6 +2,18 @@
 
 This document provides a comprehensive guide to the bPermissions codebase, development workflows, and conventions for AI assistants working on this project.
 
+# Foreword: A Living Guide for AI Assistants
+
+This document serves as a comprehensive guide to the bPermissions codebase, designed specifically for AI assistants working on this project. **This is a living document** - it should evolve alongside the codebase, and you, as an AI assistant, have a responsibility to keep it current and accurate.
+
+**Your role in maintaining this guide**: As you work on bPermissions, you should actively update this CLAUDE.md file to reflect the changes you make. When you add a new feature, update the relevant sections to document how it works. When you refactor code, update the architecture descriptions. When you discover patterns or conventions not yet documented, add them. If you find outdated information, correct it immediately. This document is most valuable when it accurately reflects the current state of the project, and maintaining that accuracy is part of your work - not a separate task to be deferred.
+
+**When to update**: Update this guide whenever you make significant changes to the codebase, including: adding or modifying API methods, changing build configurations, introducing new architectural patterns, updating dependencies, modifying the release process, or discovering undocumented behaviors while debugging. Think of documentation updates as part of the definition of "done" for any task. Future AI assistants (and human developers) will rely on this guide to understand the project quickly and accurately - make sure you leave it better than you found it.
+
+**How to update**: Keep the same structure and tone. Be specific and technical, providing code examples and file paths where relevant. Link related sections together. When in doubt, err on the side of more detail rather than less. Your updates don't need to be perfect - they need to be accurate, helpful, and maintained consistently over time.
+
+---
+
 ## Table of Contents
 
 1. [Project Overview](#project-overview)
