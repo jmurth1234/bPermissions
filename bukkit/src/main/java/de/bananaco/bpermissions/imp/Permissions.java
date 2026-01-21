@@ -1,6 +1,7 @@
 package de.bananaco.bpermissions.imp;
 
 import de.bananaco.bpermissions.api.*;
+import de.bananaco.bpermissions.imp.storage.WorldFactory;
 import de.bananaco.bpermissions.util.loadmanager.MainThread;
 import de.bananaco.bpermissions.util.loadmanager.TaskRunnable;
 import de.bananaco.bpermissions.util.Debugger;
@@ -30,10 +31,11 @@ public class Permissions extends JavaPlugin {
     // Change to public for people to hook into if they really need to
     public Map<String, Commands> commands;
     private WorldManager wm;
-    private DefaultWorld world;
+    private World world;  // Changed from DefaultWorld to World for flexibility
     private Config config;
     protected static JavaPlugin instance = null;
     private MainThread mt;
+    private WorldFactory worldFactory;  // NEW: Factory for creating worlds
 
     @Override
     public void onDisable() {
@@ -71,6 +73,11 @@ public class Permissions extends JavaPlugin {
         mt.schedule(new TaskRunnable() {
             public void run() {
                 getServer().getScheduler().cancelTasks(Permissions.instance);
+
+                // Shutdown world factory (closes database connections)
+                if (worldFactory != null) {
+                    worldFactory.shutdown();
+                }
 
                 mt.setRunning(false);
                 System.out.println(blankFormat("Worlds saved, bPermissions disabled."));
@@ -121,12 +128,25 @@ public class Permissions extends JavaPlugin {
         wm.setUseGlobalFiles(config.getUseGlobalFiles());
         wm.setUseGlobalUsers(config.getUseGlobalUsers());
         handler = new SuperPermissionHandler(this, config.useCustomPermissible());
-        loader = new WorldLoader(this, mirrors);
-        world = new DefaultWorld(this);
-        // Set the default world to our defaults
-        wm.setDefaultWorld(world);
-        // load the default world
-        world.load();
+
+        // Create world factory for creating appropriate world implementations
+        worldFactory = new WorldFactory(this, config);
+
+        // Create world loader (will use the factory)
+        loader = new WorldLoader(this, mirrors, worldFactory);
+
+        // Create default world using factory
+        try {
+            world = worldFactory.createWorld("global");
+            // Set the default world to our defaults
+            wm.setDefaultWorld(world);
+            // load the default world
+            world.load();
+        } catch (Exception e) {
+            getLogger().severe("Failed to create default world: " + e.getMessage());
+            e.printStackTrace();
+            throw new RuntimeException("Failed to initialize bPermissions", e);
+        }
         // Load the default Map for Commands
         commands = new HashMap<String, Commands>();
         // Register Commands
@@ -139,6 +159,10 @@ public class Permissions extends JavaPlugin {
         this.getCommand("group").setTabCompleter(tabCompleter);
         this.getCommand("user").setTabCompleter(tabCompleter);
         this.getCommand("setgroup").setTabCompleter(tabCompleter);
+
+        // Register changelog cleanup command
+        ChangelogCleanupCommand changelogCleanupCommand = new ChangelogCleanupCommand(this);
+        this.getCommand("changelog").setExecutor(changelogCleanupCommand);
 
         // Register loader events
         getServer().getPluginManager().registerEvents(loader, this);
